@@ -1,0 +1,440 @@
+/**
+ * @enum {string}
+ * This is the result code returned after processing a FIDO request.
+ *
+ * The following mapping is used to convert WebAuthn errors to Outcome:
+ *
+ * WebAuthn error    | Outcome
+ * ----------------- | -------
+ * AbortError        | SYSTEM_CANCELED
+ * ConstraintError   | CONSTRAINT_ERROR
+ * InvalidStateError | INVALID_STATE
+ * NotAllowedError   | NO_MATCH
+ * NotSupportedError | NOT_COMPATIBLE
+ * SecurityError     | APP_NOT_FOUND
+ * UnknownError      | FAILURE
+ *
+ */
+var Outcome = {
+    /**
+     * 
+     * The operation completed successfully
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AppSdk.transact()</li><li>AppSdk.authenticate()</li>
+     * <li>AppSdk.register()</li>
+     * <ul>
+     */
+    SUCCESS : "SUCCESS",
+
+    /**
+     * The operation failed for some nonspecific reason. In case of UAF this corresponds to UNKNOWN error.
+    * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AdaptiveCore.getMethods</li>
+     * <li>AdaptiveCore.deleteMethods</li><li>AdaptiveCore.getAllSequences</li>
+     * <li>AdaptiveJob.init</li><li>AdaptiveJob.update</li>
+     * <li>AppSdk.register</li><li>AppSdk.authenticate</li>
+     * <li>AppSdk.transact</li><li>AppSdk.initRegister</li>
+     * <li>AppSdk.initAuthenticate</li><li>AppSdk.initTransact</li>
+     * <li>AppSdk.getRegistrations</li><li>AppSdk.deregister</li>
+     * <ul>
+     */
+    FAILURE : "FAILURE",
+
+    /**
+     * The operation was canceled by user. In case of UAF this corresponds to USER_CANCELLED error.
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    CANCELED : "CANCELED",
+
+    /**
+     * No matching authentication method is found to process the request. In case of UAF this
+     * corresponds to NO_SUITABLE_AUTHENTICATOR error.
+     * <br>This code can be returned when FIDO2 (WebAuthn) is used.<br>
+     * The following methods can return this result code:
+    * <ul>
+    * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+    * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+    * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    NO_MATCH : "NO_MATCH",
+
+    /**
+     * FIDO is not supported by the platform.
+     * <br>
+     * The following method can return this result code:
+     * <ul>
+     * <li>AppSdk.init</li>
+     * </ul>
+     */
+    NOT_INSTALLED : "NOT_INSTALLED",
+
+    /**
+     * The installed version of FIDO client is not compatible. In case of UAF this corresponds to
+     * UNSUPPORTED_VERSION error.
+     * <br>
+     * The following methods can return this result code:
+     * <br>This code can be returned when FIDO2 (WebAuthn) is used.
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AppSdk.register</li>
+     * </ul>
+     */
+    NOT_COMPATIBLE : "NOT_COMPATIBLE",
+
+    /**
+     * This application is not listed in the facet file at the relying party. In case of UAF this
+     * corresponds to UNTRUSTED_FACET_ID error.
+     * <br>This code can be returned when FIDO2 (WebAuthn) is used.<br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * <ul>
+     */
+    APP_NOT_FOUND : "APP_NOT_FOUND",
+
+    /**
+     * The transaction text could not be processed, e.g., certain HTML tags are not allowed. This
+     * is currently not used.
+     */
+    TRANSACTION_ERROR : "TRANSACTION_ERROR",
+
+    /**
+     * Waiting on user action to proceed. In case of UAF this corresponds to WAIT_USER_ACTION error.
+     * This is currently not used.
+     */
+    WAIT_USER_ACTION : "WAIT_USER_ACTION",
+
+    /**
+     * Window.location.protocol is not "https". In case of UAF this corresponds to
+     * INSECURE_TRANSPORT error. Currently not used.
+     */
+    INSECURE_TRANSPORT : "INSECURE_TRANSPORT",
+
+    /**
+     * A violation of the UAF Protocol occurred. In case of UAF this corresponds to PROTOCOL_ERROR
+     * error.
+     * <br>This code can be returned when U2F protocol is used.<br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AppSdk.register</li><li>AppSdk.authenticate</li>
+     * <li>AppSdk.transact</li>
+     * </ul>
+     */
+    PROTOCOL_ERROR : "PROTOCOL_ERROR",
+
+    /**
+     * This indicates that this is not the first time the init operation is called.
+     * Currently not used.
+     */
+    ALREADY_INITIALIZED : "ALREADY_INITIALIZED",
+
+    /**
+     * ASM reported that key is disappeared permanently
+     * Currently not used.
+     */
+    KEY_DISAPPEARED_PERMANENTLY : "KEY_DISAPPEARED_PERMANENTLY",
+
+    /**
+     * ASM reported that the authenticator denied access to the resulting request
+     * Currently not used.
+     */
+    AUTHENTICATOR_ACCESS_DENIED : "AUTHENTICATOR_ACCESS_DENIED",
+
+    /**
+     * ASM reported that transaction content cannot be rendered, e.g. format doesn't fit authenticator's need
+     * Currently not used.
+     */
+    INVALID_TRANSACTION_CONTENT : "INVALID_TRANSACTION_CONTENT",
+
+    /**
+     * ASM reported that the user took too long to follow an instruction,
+     * e.g. didn't swipe the finger within the accepted time
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.authenticate</li>
+     * </ul>
+     */
+    USER_NOT_RESPONSIVE : "USER_NOT_RESPONSIVE",
+
+    /**
+     * ASM reported that there are insufficient resources in the authenticator to perform the requested task
+     * Currently not used
+     */
+    INSUFFICIENT_AUTHENTICATOR_RESOURCES : "INSUFFICIENT_AUTHENTICATOR_RESOURCES",
+
+    /**
+     * ASM reported too many wrong attempts to authenticate
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    USER_LOCKOUT : "USER_LOCKOUT",
+
+    /**
+     * ASM reported that the user is not enrolled in the device
+     * Currently not used
+     */
+    USER_NOT_ENROLLED : "USER_NOT_ENROLLED",
+
+    /**
+     * The data from QR code is invalid
+     * Currently not used
+     */
+    INVALID_QR : "INVALID_QR",
+
+    /**
+     * Error from UAF server
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AdaptiveCore.getMethods</li>
+     * <li>AdaptiveCore.deleteMethods</li><li>AdaptiveCore.getAllSequences</li>
+     * <li>AdaptiveJob.init</li><li>AdaptiveJob.update</li>
+     * <li>AppSdk.register</li><li>AppSdk.authenticate</li>
+     * <li>AppSdk.transact</li><li>AppSdk.initRegister</li>
+     * <li>AppSdk.initAuthenticate</li><li>AppSdk.initTransact</li>
+     * <li>AppSdk.getRegistrations</li><li>AppSdk.deregister</li>
+     * </ul>
+     */
+    SERVER_ERROR : "SERVER_ERROR",
+
+    /**
+     * Error while connecting to UAF server
+     * Currently not used
+     */
+    CONNECTION_ERROR : "CONNECTION_ERROR",
+
+    /**
+     * Corresponds to UAF_NO_REGISTRATIONS_STATUS_CODE
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.authenticate</li><li>AdaptiveUI.transact</li>
+     * <li>AdaptiveCore.getMethods</li><li>AdaptiveCore.deleteMethods</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * <li>AppSdk.getRegistrations</li><li>AppSdk.deregister</li>
+     * <ul>
+     */
+    SERVER_USER_NOT_FOUND : "SERVER_USER_NOT_FOUND",
+
+    /**
+     * Corresponds to UAF_REG_NOTFOUND_STATUS_CODE
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    SERVER_REG_NOT_FOUND : "SERVER_REG_NOT_FOUND",
+
+    /**
+     * Corresponds to UAF_UVI_NOT_MATCH_STATUS_CODE
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    SERVER_UVI_NOT_MATCH : "SERVER_UVI_NOT_MATCH",
+
+    /**
+     * The user choose alternate authentication method
+     * Currently not used
+     */
+    FALLBACK : "FALLBACK",
+
+    /**
+     * Corresponds to UNAUTHORIZED HTTP status code
+     *  <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AdaptiveCore.getMethods</li>
+     * <li>AdaptiveCore.deleteMethods</li><li>AdaptiveCore.getAllSequences</li>
+     * <li>AdaptiveJob.init</li><li>AdaptiveJob.update</li>
+     * <li>AppSdk.register</li><li>AppSdk.authenticate</li>
+     * <li>AppSdk.transact</li><li>AppSdk.initRegister</li>
+     * <li>AppSdk.initAuthenticate</li><li>AppSdk.initTransact</li>
+     * <li>AppSdk.getRegistrations</li><li>AppSdk.deregister</li>
+     * </ul>
+     */
+    INVALID_SESSION : "INVALID_SESSION",
+
+    /**
+     * The operation was aborted.
+     *  <br>
+     * This code can be returned when FIDO2 (WebAuthn) is used.<br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AdaptiveUI.authenticate</li>
+     * <li>AdaptiveUI.transact</li><li>AppSdk.register</li>
+     * <li>AppSdk.authenticate</li><li>AppSdk.transact</li>
+     * </ul>
+     */
+    SYSTEM_CANCELED : "SYSTEM_CANCELED",
+
+    /**
+     * The authenticator is required to verify User but it doesn't have such capability.
+     * <br>The authenticator is required to have a resident key, but it doesn't have a storage.
+     * <br>A mutation operation in a transaction failed because a constraint was not satisfied.
+     * <br>This code can be returned when FIDO2 (WebAuthn) is used.<br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AppSdk.register</li>
+     * </ul>
+     */
+    CONSTRAINT_ERROR : "CONSTRAINT_ERROR",
+
+    /**
+     * Returned ONLY after User consent is received by authenticator.
+     * <br>The user tried to register a device/authenticator which already has a registration for the server.
+     * <br>
+     * This code can be returned when FIDO2 (WebAuthn) is used.<br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.register</li><li>AppSdk.register</li>
+     * </ul>
+     */
+    INVALID_STATE : "INVALID_STATE",
+
+    /**
+     * Operation failed due to ruleset verification error.
+     * <br>
+     * The following methods can return this result code:
+     * <ul>
+     * <li>AdaptiveUI.authenticate</li><li>AdaptiveUI.transact</li>
+     * <li>AdaptiveCore.getMethods</li><li>AdaptiveCore.getAllSequences</li>
+     * <li>AdaptiveJob.init</li><li>AdaptiveJob.update</li>
+     * <li>AppSdk.register</li><li>AppSdk.authenticate</li>
+     * <li>AppSdk.transact</li><li>AppSdk.initRegister</li>
+     * <li>AppSdk.initAuthenticate</li><li>AppSdk.initTransact</li>
+     * </ul>
+     */
+    SERVER_VERIFICATION_ERROR: "SERVER_VERIFICATION_ERROR"
+}
+
+Outcome.fromU2FError = function(u2fError) {
+    switch(u2fError) {
+    case 0: /* OK */
+        return Outcome.SUCCESS;
+
+    case 1: /* OTHER_ERROR */
+        return Outcome.FAILURE;
+
+    case 2: /* BAD_REQUEST */
+    	return Outcome.PROTOCOL_ERROR;
+
+    case 3: /* CONFIGURATION_UNSUPPORTED */
+    	return Outcome.FAILURE;
+
+    case 4: /* DEVICE_INELIGIBLE */
+    	return Outcome.NO_MATCH;
+
+    case 5: /* TIMEOUT */
+    	return Outcome.FAILURE;
+    }
+
+    return Outcome.FAILURE;
+}
+
+Outcome.fromFIDO2Error = function(fido2Error) {
+    switch(fido2Error) {
+    case 'AbortError':
+    	return Outcome.SYSTEM_CANCELED;
+    case 'ConstraintError':
+    	return Outcome.CONSTRAINT_ERROR;
+    case 'InvalidStateError':
+    	return Outcome.INVALID_STATE;
+    case 'NotAllowedError':
+    	return Outcome.NO_MATCH;
+    case 'NotSupportedError':
+    	return Outcome.NOT_COMPATIBLE;
+    case 'SecurityError':
+    	return Outcome.APP_NOT_FOUND;
+    }
+
+    return Outcome.FAILURE;
+}
+
+Outcome.fromStatusCode = function(statusCode) {
+	switch (statusCode) {
+	case 4000: /* OK. Operation completed */
+	case 4002: /* OK. Optional security checks failed */
+	case 4003: /* OK. Operation completed */
+	case 4004: /* OK. Operation in progress */
+	case 4005: /* OK. Operation is pending */
+	case 4006: /* OK. Operation is partially succeeded */
+	case 4453: /* OperationAlreadyCompleted */
+		return Outcome.SUCCESS;
+
+	case 4001: /* OK. Credential variance */
+		return Outcome.SERVER_UVI_NOT_MATCH;
+
+    case 4400: /* RegistrationNotFound Exception */
+		return Outcome.SERVER_REG_NOT_FOUND;
+
+	case 4401: /* Challenge Expired Exception/Operation Expired exception */
+		return Outcome.USER_NOT_RESPONSIVE;
+
+	case 4403: /* Ruleset Exception */
+		return Outcome.SERVER_VERIFICATION_ERROR;
+
+	case 4402: /* Security Exception */
+	case 4404: /* Internal Server Error */
+	case 4406: /* Payload Exception */
+	case 4407: /* InvalidRequest Exception */
+	case 4408: /* UnsupportedClientMessage Exception */
+	case 4409: /* ClientMessage Exception */
+		return Outcome.SERVER_ERROR;
+
+	case 4430: /* UserNotFound Exception */
+		return Outcome.SERVER_USER_NOT_FOUND;
+
+	case 4450: /* UserCancelled Exception */
+		return Outcome.CANCELED;
+
+	case 4452: /* To too many attempts exception*/
+		return Outcome.USER_LOCKOUT;
+		
+	case 4454: /* Failed due to method specific issues */
+	case 0: /* Unexpected Status Code */
+		return Outcome.FAILURE;
+
+	default:
+		return Outcome.FAILURE;
+	}
+}
+
+Outcome.fromHttpStatusCode = function(statusCode) {
+	switch (statusCode) {
+	case 200:
+		return Outcome.SUCCESS;
+
+	case 401: /* UNAUTHORIZED */
+		return Outcome.INVALID_SESSION;
+
+	default:
+		return Outcome.SERVER_ERROR;
+	}
+}

@@ -1,0 +1,149 @@
+/**
+ * This interface defines a single method used for communication with the server.
+ * The App SDK has default implementation of RestClient RestClientDefault.
+ * For custom implementation define a RestClientCustom object that implements RestClient interface in 
+ * iframe-custom.js file which should be located in nnlappsdk Web App js directory (along with iframe-default.js).
+ * Then the App SDK will call RestClientCustom instead of RestClientDefault.
+ * @interface RestClient
+ */
+
+/**
+ * This callback should be called by rest client to provide Server response to the App SDK.
+ * @callback RestClient#responseCallback
+ * @param {object} response the response from the Server
+ * @param {object} restParams other parameters needed by rest client
+ * @param {Outcome} outcome a result code returned after processing a REST request.
+ */
+
+/**
+ * This method will be called by App SDK to send the request to the Server and return the response to the App SDK.
+ * @method RestClient#sendRequest
+ * @param {object} request the request which will be sent to the Server
+ * @param {object} restParams other parameters needed by rest client
+ * @param {RestClient#responseCallback} responseCallback a callback to be called with the response from the Server.
+ */
+
+/**
+ * @classdesc Implements a default RestClient interface.
+ * @class
+ * @implements RestClient
+ */
+var RestClientDefault = function() {
+		
+	/**
+	 * Sends REST request to the Server and returns the response to the App SDK.
+	 * @param {object} request the request which will be sent to the Server.
+	 * @param {object} restParams other parameters needed by rest client
+	 * @param {RestClient#responseCallback} responseCallback a callback to be called with the response from the Server.
+	 */
+	this.sendRequest = function(requestJson, restParams, responseCallback) {
+		var as = {
+				url: 			restParams.url,						
+				method: 		"POST",
+				dataType: 		"json",
+				headers: 		{"Content-Type": "application/json; charset=UTF-8"},
+				crossDomain: 	true,
+				xhrFields: 		{withCredentials: true},
+				timeout: 		10000,
+				cache: 			false
+			};
+		// Set sessionData
+		if (Utils.isSessionPresent(restParams.sessionData)) {
+			requestJson.sessionData = restParams.sessionData;
+		}
+		// Set options from extras
+		if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+			requestJson.optionsData = restParams.extras.options;
+		}
+		// Set contextData from extras
+		if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+			requestJson.contextData = restParams.extras.contextData;
+		}
+		// Set ruleSetName from extras
+		if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+			requestJson.ruleSetName = restParams.extras.ruleSetName;
+		}
+		if(restParams.callerOrigin !== undefined){
+			requestJson.callerOrigin = restParams.callerOrigin;
+		}
+		
+		if (restParams.id) {
+			requestJson.id = restParams.id;
+		} else {
+			requestJson.id = Utils.createUUID();
+		}
+		
+		if (restParams.dataType) {
+			as.dataType = restParams.dataType;
+		}
+		as.data = JSON.stringify(requestJson);
+		
+		// Callback function to be called if the request succeeds.
+		as.success = function(response, textStatus, jqXHR) {
+			var restStatus = getRestStatus(jqXHR);
+			responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+		}
+		
+		// Callback function to be called if the request fails.
+		// 
+		as.error = function(jqXHR, textStatus, errorThrown) {
+			var restStatus = getRestStatus(jqXHR);
+	        responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+		}
+		jQuery.ajax(as);
+	}
+	
+	/*
+	 * Returns rest status and response body if available
+	 * Possible values are Outcome.SUCCESS, Outcome.INVALID_SESSION and Outcome.SERVER_ERROR
+	 * @private
+	 */
+	function getRestStatus(jqXHR) {
+    	var statusCode;
+        var responseJson;
+        var restStatus = {};
+        try {
+            responseJson = JSON.parse(jqXHR.responseText);
+            statusCode = (responseJson.statusCode || responseJson.error);
+        } catch (e) {
+            // if response is not a valid JSON, that means an server error has occurred.
+        	console.log('Invalid JSON response is returned from the server');
+        }
+
+        if(statusCode !== undefined) {
+        	restStatus.restStatus = Outcome.SUCCESS;
+        } else if(jqXHR.status !== undefined) {
+        	restStatus.restStatus =  Outcome.fromHttpStatusCode(jqXHR.status);
+        } else {
+        	restStatus.restStatus =  Outcome.SERVER_ERROR;
+        }
+        restStatus.responseJson = responseJson;
+        return restStatus;
+        
+    }
+}
+/**
+ * Create and return a single instance of RestClient RestClientDefault or RestClientCustom 
+ * @private
+ */
+var RestClientFactory = (function () {
+    var instance;
+    
+    function createInstance() {
+    	if (typeof RestClientCustom !== 'undefined') {
+    		instance = new RestClientCustom(); 
+		} else {
+			instance = new RestClientDefault();
+		}
+        return instance;
+    }
+ 
+    return {
+        getInstance: function () {
+            if (!instance) {
+                instance = createInstance();
+            }
+            return instance;
+        }
+    };
+})();

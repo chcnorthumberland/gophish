@@ -1,0 +1,81 @@
+let TabulatorEvent = {
+    INC_COUNT: "INC_COUNT", // Invokes updateMetric(metricName) method.
+    START_TIMER: "START_TIMER", // Invokes startTimer(metricName) method.
+    UPDATE_METRIC_TIME: "UPDATE_METRIC_TIME", // Invokes updateMetricTimer(metricName) method.
+}
+
+let TabulatorMetricName = {
+    /**
+     * Key for counting the INIT_ADAPTIVE requests.
+     */
+    INIT_ADAPTIVE_TIME: 'initAdaptiveTime',
+
+    /**
+     * Key for counting the invalid INIT_ADAPTIVE requests.
+     */
+    INVALID_INIT_ADAPTIVE: 'invalidInitAdaptive',
+
+    /**
+     * Key for counting the average time of VERIFY requests.
+     */
+    VERIFY_TIME: 'verifyTime',
+
+    /**
+     * Key for counting  of VERIFY requests.
+     */
+    INVALID_VERIFY: 'invalidVerify',
+
+    /**
+     * Key for counting the average time of INIT_AUTH requests.
+     */
+    INIT_AUTH_TIME: 'initAuthTime',
+    /**
+     * Key for counting the average time of FINISH_AUTH requests.
+     */
+    FINISH_AUTH_TIME: 'finishAuthTime',
+    /**
+     * Key for counting the invalid INIT_AUTH requests.
+     */
+    INVALID_INIT_AUTH: 'invalidInitAuth',
+    /**
+     * Key for counting the invalid FINISH_AUTH requests.
+     */
+    INVALID_FINISH_AUTH: 'invalidFinishAuth'
+}
+
+
+let TabulatorCommunication = (function () {
+    /**
+     * @type {MessagePort}
+     */
+    let boundChannel;
+
+    return {
+        /**
+         * @param {TabulatorEvent} tabulatorEvent the event to be proceed.
+         * @param {TabulatorMetricName} tabulatorMetricName the metric name to be updated.
+         */
+        sendEvent: function (tabulatorEvent, tabulatorMetricName) {
+            if (boundChannel == null) {
+                // Just do nothing if the channel is not bound.
+                return;
+            }
+
+            let message = {
+                'tabulatorEvent': tabulatorEvent,
+                'tabulatorMetricName': tabulatorMetricName,
+            };
+
+            // Send the event to the tabulator through the bound channel.
+            boundChannel.postMessage(message);
+        },
+
+        /**
+         * @param event {MessageEvent}
+         */
+        bindChannel: function (event) {
+            // Bind the channel by saving it.
+            boundChannel = event.ports[0];
+        }
+    }
+})();

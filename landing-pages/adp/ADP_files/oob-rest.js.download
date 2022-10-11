@@ -1,0 +1,88 @@
+
+
+var UafMsg = function(op, op1, regHandle, statusHandle) {
+	
+	this.rpData = {
+			op: op, // REG, AUTH, TRANS
+			op1: op1, // START, STATUS, CANCEL
+			regHandle: regHandle,
+			statusHandle: statusHandle
+	};
+	
+	
+	var RegData = function() {
+		
+		this.startJson = {
+			operation : "START_OOB_REG",
+			oobMode : {
+				qr : true,
+				rawData : true
+			},
+			id: ""
+		};
+
+		this.statusJson = {
+			operation : "STATUS_OOB_REG",
+		};
+
+		this.cancelJson = {
+			operation : "CANCEL_STATUS_OOB_REG",
+		};
+			
+	}
+		
+	var AuthData = function() {
+			
+		this.startJson = {
+			operation : "START_OOB_AUTH",
+			oobMode : {
+				qr : true,
+				push: false,
+				rawData : true
+			},
+			id: ""
+		};
+
+		this.statusJson = {
+			operation : "STATUS_OOB_AUTH",
+		};
+
+		this.cancelJson = {
+			operation : "CANCEL_STATUS_OOB_AUTH",
+		};
+	}
+
+	this.initRest = function(){
+		
+		var rpData = this.rpData;
+
+		switch(rpData.op){
+		case "REG": 
+			this.operData = new RegData();
+			switch(rpData.op1){
+			case "START": 
+				return this.operData.startJson;
+			case "STATUS": 
+				this.operData.statusJson.oobStatusHandle = rpData.statusHandle;
+				return this.operData.statusJson;
+			case "CANCEL":
+				this.operData.cancelJson.oobStatusHandle = rpData.statusHandle;
+				return this.operData.cancelJson;	
+			}
+			
+		case "AUTH":
+		case "TRANS":
+			this.operData = new AuthData();
+			switch(rpData.op1){
+			case "START": 
+				return this.operData.startJson;
+			case "STATUS":
+				this.operData.statusJson.oobStatusHandle = rpData.statusHandle;
+				return this.operData.statusJson;
+			case "CANCEL":
+				this.operData.cancelJson.oobStatusHandle = rpData.statusHandle;
+				return this.operData.cancelJson;	
+			}
+		}
+	}
+}

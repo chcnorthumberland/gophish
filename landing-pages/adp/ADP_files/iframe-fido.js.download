@@ -1,0 +1,280 @@
+/**
+ * iframe-fido.js - Non OOB rest operations.
+ */
+define(function($) {
+
+	var Client = function(event) {
+		var mEvent = event;
+		var mRestClient = RestClientFactory.getInstance();
+		var mRestParams = {
+			url: mEvent.data.endPoint
+		}
+
+		var MFAS_STATUSCODE_SUCCESS = 4000;
+		var MFAS_STATUSCODE_SUCCESS_VARIANCE = 4001;
+		var MFAS_STATUSCODE_SUCCESS_OPTIONAL = 4002;
+
+		function checkSuccesStatus(statusCode) {
+			switch(statusCode){
+				case MFAS_STATUSCODE_SUCCESS:
+				case MFAS_STATUSCODE_SUCCESS_VARIANCE:
+				case MFAS_STATUSCODE_SUCCESS_OPTIONAL:
+					return true;
+			}
+
+			return false;
+		}
+
+		// Returns an object with the request to be sent to server if needed
+		// and a flag indicating whether the fido client should be called or not.
+		function getOperationData(isInit, data) {
+			var operationData = {}
+
+			switch(mEvent.data.op) {
+			case 'REG':
+				// For REG operation if it is a policy check, only init request should be sent to server,
+				// but for regular registration both init and finish requests should be sent to the server.
+				// Fido client should be called after init.
+				if(!mEvent.data.checkPolicy || isInit) {
+					operationData.request = {
+						operation: (isInit ? 'INIT_REG' : 'FINISH_REG'),
+						message: (isInit ? data.initMessage : data.response.message)
+					}
+					if((data.extras && data.extras.webOob)||(mRestParams.extras && mRestParams.extras.webOob)){
+						operationData.request.operation = isInit ? 'INIT_OOB_REG' : 'FINISH_OOB_REG';
+					}
+				}
+				operationData.callClient = true;
+				break;
+
+			case 'AUTH':
+			case 'TRANS':
+				// For AUTH and TRANS operations both init and finish requests should be sent to the server
+				// and fido client should be called after init.
+				operationData.request = {
+					operation: (isInit ? 'INIT_AUTH' : 'FINISH_AUTH'),
+					message: (isInit ? data.initMessage : data.response.message)
+				}
+				if((data.extras && data.extras.webOob)||(mRestParams.extras && mRestParams.extras.webOob)){
+					operationData.request.operation = isInit ? 'INIT_OOB_AUTH' : 'FINISH_OOB_AUTH';
+				}
+				
+				if(data.transID) {
+					operationData.request.transaction = {
+						id: data.transID 
+					}
+				}
+				operationData.callClient = true;
+				break;
+
+			case 'DEREG':
+				// For DEREG operation only one request should be sent to the server
+				// and fido client should be called after that.
+				if(isInit) {
+					operationData.request = {
+						operation: 'DELETE_REG',
+						protocolFamily: (data.fidoProtocol === 'fido2' ? 'web' : 'uaf')
+					}
+					if(data.regHandle) {
+						operationData.request.handle = data.regHandle;
+					}
+					operationData.callClient = true;
+				}
+				break;
+
+			case 'LISTREG':
+				// For LISTREG operation only one request should be sent to the server
+				// and fido client should not be called after that.
+				if(isInit) {
+					operationData.request = {
+						operation: 'LIST_REG',
+						protocolFamily: 'all'
+					}
+					operationData.callClient = false;
+				}
+				break;
+
+			case 'LOGOUT':
+				// For LOGOUT operation only one request should be sent to the server
+				// and fido client should not be called after that.
+				if(isInit) {
+					operationData.request = {
+						operation: 'LOGOUT'
+					}
+					operationData.callClient = false;
+				}
+				break;
+
+			case 'FETCH_USER_DATA':
+				operationData.request = {
+					operation: 'FETCH_USER_DATA'
+				}
+				operationData.callClient = false;
+				break;
+
+			case 'PURGE_USER_DATA':
+				operationData.request = {
+					operation: 'PURGE_USER_DATA'
+				}
+				operationData.callClient = false;
+				break;
+
+			case 'UPDATE_REG':
+				operationData.request = {
+					operation: 'UPDATE_REG',
+					handle: data.regHandle,
+					regData: []
+				}
+				// Convert the object into array of objects to match server structure.
+				for(var name in data.registrationData) {
+					operationData.request.regData.push({
+						name: name,
+						value: data.registrationData[name]
+					});
+				}
+				operationData.callClient = false;
+				break;
+			}
+
+			return operationData;
+		}
+
+		this.initOperation = function() {
+			var operationData = getOperationData(true, mEvent.data);
+
+			// Initialize restParams
+			Utils.setSessionData(mRestParams, mEvent.data.session);
+			Utils.setId(mRestParams, mEvent);
+			Utils.setCallerOrigin(mRestParams, mEvent);
+			Utils.setExtras(mRestParams, mEvent);
+
+			if(mEvent.data.op === 'REG') {
+				Utils.setUserDisplayName(operationData.request, mEvent);
+			}
+
+			updateTabulator(TabulatorEvent.START_TIMER, mEvent.data.op, TabulatorMetricName.INIT_AUTH_TIME);
+			mRestClient.sendRequest(operationData.request, mRestParams, function(responseJson, restParams, restStatus) {
+				if(restStatus === Outcome.SUCCESS) {
+					var statusCode = responseJson.statusCode;
+					// Call the fido client if needed on success.
+					if(checkSuccesStatus(statusCode) && operationData.callClient) {
+						sendToFidoClient(mEvent.data.op, responseJson.message);
+					} else {
+						// Otherwise return the response to the caller.
+						returnResponse(Outcome.fromStatusCode(statusCode), responseJson);
+					}
+					updateTabulator(TabulatorEvent.UPDATE_METRIC_TIME, mEvent.data.op, TabulatorMetricName.INIT_AUTH_TIME)
+				} else {
+					returnResponse(restStatus, responseJson);
+					updateTabulator(TabulatorEvent.INC_COUNT, mEvent.data.op, TabulatorMetricName.INVALID_INIT_AUTH)
+				}
+			});
+		}
+
+		this.finishOperation = function(data) {
+			if(data.outcome === Outcome.SUCCESS) {
+				// If the fido client returned success, get operation data to determine whether another rest call is needed or not. 
+				var operationData = getOperationData(false, data);
+				if(operationData.request) {
+					if(operationData.request.operation === 'FINISH_REG' && data.extras && data.extras.registrationName) {
+						operationData.request.authenticatorName = data.extras.registrationName;
+					}
+
+					updateTabulator(TabulatorEvent.START_TIMER, mEvent.data.op, TabulatorMetricName.FINISH_AUTH_TIME);
+					// If request is present then rest call is needed.
+					mRestClient.sendRequest(operationData.request, mRestParams, function (responseJson, restParams, restStatus) {
+						if(restStatus === Outcome.SUCCESS) {
+							// For finish oob operations if userName is not present in response,
+							/// extract it from response message.
+							if(operationData.request.operation.startsWith('FINISH_OOB') && 
+									!responseJson.userName && responseJson.message) {
+								var message = atob(responseJson.message);
+								message = JSON.parse(message);
+								if(message.userName) {
+									responseJson.userName = message.userName;
+								}
+							}
+
+							updateTabulator(TabulatorEvent.UPDATE_METRIC_TIME, mEvent.data.op, TabulatorMetricName.FINISH_AUTH_TIME);
+							returnResponse(Outcome.fromStatusCode(responseJson.statusCode), responseJson);
+						} else {
+							returnResponse(restStatus, responseJson);
+							updateTabulator(TabulatorEvent.INC_COUNT, mEvent.data.op, TabulatorMetricName.INVALID_FINISH_AUTH);
+						}
+					});
+				} else {
+					// If rest call is not needed, return the response form fido client.
+					returnResponse(Outcome.SUCCESS, data.response);
+				}
+			} else {
+				var errorData = {};
+				if(mRestParams && mRestParams.extras && mRestParams.extras.webOob){
+					var serverMessage = JSON.parse(atob(data.serverMessage))
+					var nnlData = serverMessage.server.nnlData;
+					operationRequest = {
+						operation: mEvent.data.op === 'REG'?'CANCEL_OOB_REG':'CANCEL_OOB_AUTH',
+						nnlData: nnlData
+					}
+					mRestClient.sendRequest(operationRequest, mRestParams, function(responseJson, restParams, restStatus) {
+						console.log(responseJson)
+					});
+				}
+				if(data.response && data.response.message) {
+					errorData.errorDesc = data.response.message;
+				}
+				returnResponse(data.outcome, errorData);
+			}
+		}
+
+		this.cancel = function() {
+			this.sendToFidoClient('CANCEL', null);
+		}
+
+		function returnResponse(outcome, responseJson) {
+            var response = responseJson || {};
+            response.outcome = outcome;
+            response.opType = mEvent.data.op;
+            Utils.postMessage(response, mEvent);
+           	if(clients[mEvent.data.opID]) {
+           		delete clients[mEvent.data.opID];
+           	}
+		}
+
+		function updateTabulator(tabulatorEvent, fidoOp, metricName) {
+			if (fidoOp === 'AUTH' || fidoOp === 'TRANS') {
+				TabulatorCommunication.sendEvent(tabulatorEvent, metricName);
+			}
+		}
+
+		function sendToFidoClient(op, serverMessage) {
+			var message = {
+	        	type: 'nnl.fidoclient',
+	        	op: op,
+	        	serverMessage: serverMessage,
+	        	extras: mEvent.data.extras,
+				checkPolicy: mEvent.data.checkPolicy
+	        }
+	        Utils.postMessage(message, mEvent);
+		}
+	};
+
+	var clients = {};
+
+	function receiveMessage(event) {
+		var data = event.data;
+
+		if(data.type === 'nnl.fidoclient' && clients[data.opID]) {
+			// If this call is after fido client processing, then finish operation with current client.
+			clients[data.opID].finishOperation(data);
+		} else if(data.op === 'CANCEL' && clients[data.opID]) {
+			// If cancellation is requested for current operation, call cancel for current client.
+			clients[data.opID].cancel();
+		} else {
+			// Otherwise this is a new operation request. Create a new client and start the operation.
+			clients[data.opID] = new Client(event);
+			clients[data.opID].initOperation();
+		}
+  	}
+
+	return {process: receiveMessage};
+});

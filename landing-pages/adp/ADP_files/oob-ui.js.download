@@ -1,0 +1,260 @@
+/**
+ * @classdesc Provides OOB UI.
+ * This object creates the OOB UI elements in the predefined division of HTML document to display:
+ * <br> - Operation title - ("operationTitle" ID) This field displays the OOB operation (registration or authentication)
+ * <br> - Device info - Indicates the device information
+ * <br> - Remaining time of current operation
+ * <br> - QR code - (ID "qrCodePanel") - A section in the document to display QR code.
+ * <br> - Other information - (ID "additionalInfo") Displays additional information at the very bottom of the document.
+ * @class
+ */
+var OOBUI = new (function() {
+	this.onCancel = null;
+
+	var oobui = null;
+	var cancelButtons = null;
+	var operationTitle = null;
+	var deviceInfo = null;
+	var qrCodeSection = null;
+	var pushSection = null;
+	var pushText = null;
+	var scanQRButton = null;
+	var expiryText = null;
+	var additionalInfo = null;
+	var qrImageData = null;
+	
+	/**
+	 * @private
+	 * String constants.
+	 */
+	var nnl_strings =
+	{
+		// Registration operation title message
+		registration_progress_msg:   'Registration in progress ...',
+		// Authentication operation title message
+		authentication_progress_msg: 'Authentication in progress ...',
+		// Push notification message
+		push_notification_msg:       'A push notification has been sent to your mobile device. <br/> If you did not receive the notification, scan a QR code to proceed.',
+		// OOB operation expiration time.
+		oob_expire_msg:		     	 'This screen will expire in {minutes} min and {seconds} sec.',
+		// Additional information on the bottom of box
+		additional_info:			 'On your smartphone, please open the Nok Nok App to scan the QR code on this screen.',
+		// Additional information on the bottom of box for web Oob
+		additional_info_webOob:		 'On your smartphone, please open the camera or QR scanner app.',
+		// Switch to QR code button text
+		scan_qr_button_text:		 'Use QR Code',
+	};
+
+	// Initialize UI elements only after UI HTML is loaded.
+	var isReady = NNLUtils.loadHTML('oob-ui.html', 'nnl-oob-ui-section').then(function() {
+		oobui = document.querySelector('#nnl-oob-ui');
+		// The UI can have multiple cancel buttons (e.g. a "close" button on a modal and an explicit "cancel" button),
+		// so get all of them using class selector instead of id.
+		cancelButtons = oobui.querySelectorAll('.nnl-oob-cancel');
+		operationTitle = oobui.querySelector('#nnl-oob-operation-title');
+		deviceInfo = oobui.querySelector('#nnl-oob-device-info');
+		qrCodeSection = oobui.querySelector('#nnl-oob-qr-section');
+		pushSection = oobui.querySelector('#nnl-oob-push-section');
+		pushText = oobui.querySelector('#nnl-oob-push-text');
+		scanQRButton = oobui.querySelector('#nnl-oob-scan-qr');
+		expiryText = oobui.querySelector('#nnl-oob-expiry-text');
+		additionalInfo = oobui.querySelector('#nnl-oob-additional-info');
+
+		pushText.innerHTML = nnl_strings.push_notification_msg;
+		scanQRButton.innerText = nnl_strings.scan_qr_button_text;
+
+		// Add click event listeners.
+		scanQRButton.addEventListener('click', displeyQRImage);
+		cancelButtons.forEach(function(cancelButton) {
+			cancelButton.addEventListener('click', onCancelHandler);
+		});
+	});
+
+	// Displays or hides given element.
+	function toggleVisibility(el, show) {
+		el.style.display = (show ? 'block' : 'none');
+	}
+
+	// Cancel button click handler. Calls onCancel if it is set.
+	var thisRef = this;
+	function onCancelHandler() {
+		thisRef.hide();
+
+		if(typeof thisRef.onCancel === 'function') {
+			thisRef.onCancel();
+		}
+	}
+
+	/**
+	 * Overrides the items in nnl_strings.
+	 *
+	 * @param {string} key - the given item to update.
+     * @param {string} value - the value to update.
+	 */
+	this.setDisplayString = function(key, value) {
+		nnl_strings[key] = value;
+	}
+
+	/**
+	 * Hides the UI.
+	 */
+	this.hide = function() {
+		// Access UI elements only after they are ready.
+		return isReady.then(function() {
+			// Hide the UI.
+			toggleVisibility(oobui, false);
+			toggleVisibility(operationTitle, false);
+			toggleVisibility(deviceInfo, false);
+			toggleVisibility(qrCodeSection, false);
+			qrCodeSection.innerHTML  = '';
+			toggleVisibility(additionalInfo, false);
+			toggleVisibility(pushSection, false);
+			toggleVisibility(expiryText, false);
+			countdown.stop();
+		});
+	}
+
+	/**
+     * Updates the OOB UI according to provided state information.
+     * @param {object} state Object containing the information about of current state
+     * of processing OOB operation.
+     */
+	this.update = function(state) {
+		// Access UI elements only after they are ready.
+		return isReady.then(function() {
+			console.log("OOBUI.update: " + JSON.stringify(state));
+			if (state.oob === "START") {
+				thisRef.hide().then(function() {
+					displayTitle(state.op);
+					displayQr(state.qr, state.qrType, state.push);
+					// Show the UI.
+					toggleVisibility(oobui, true);
+				});
+			} else if (state.oob === "STATUS") {
+				displayDeviceInfo(state.device, state.op);
+				countdown.start(state.millis);
+			}
+		});
+	};
+
+	/**
+	 * @private
+	 */
+	function displayTitle(op) {
+		operationTitle.innerHTML = (op === 'REG' ? nnl_strings.registration_progress_msg : nnl_strings.authentication_progress_msg);
+		toggleVisibility(operationTitle, true);
+	}
+
+	function displeyQRImage() {
+		toggleVisibility(pushSection, false);
+		toggleVisibility(qrCodeSection, true);
+		toggleVisibility(additionalInfo, true);
+	}
+
+	/**
+	 * @private
+	 */
+	function displayQr(imgData, qrType, push) {
+		var img = document.createElement('img');
+		img.src = 'data:image/png;base64,' + imgData;
+		img.title = '';
+		qrCodeSection.appendChild(img);
+
+		if(qrType === QRType.UNIVERSAL_RP_SPECIFIC || qrType === QRType.UNIVERSAL_ANY_RP) {
+			additionalInfo.innerText = nnl_strings.additional_info_webOob;
+		} else {
+			additionalInfo.innerText = nnl_strings.additional_info;
+		}
+
+		if(push) {
+			toggleVisibility(pushSection, true);
+			toggleVisibility(pushText, true);
+			toggleVisibility(scanQRButton, true);
+		} else {
+			toggleVisibility(qrCodeSection, true);
+			toggleVisibility(additionalInfo, true);
+		}
+	}
+
+	/**
+	 * @private
+	 */
+	function displayDeviceInfo(info, op) {
+		if(info)  {
+			qrCodeSection.innerHTML  = '';
+			toggleVisibility(additionalInfo, false);
+			toggleVisibility(pushSection, false);
+			deviceInfo.innerText = '[' + info + ']';
+			toggleVisibility(deviceInfo, true);
+		}
+	}
+
+	/**
+	 * @private
+	 * @classdesc Counts down the remaining time.
+	 * @class
+	 */
+	function Countdown() {
+		this.interval = 1000;
+		this.id = null;
+		this.remainingTime = -1;
+
+		/**
+		 * @private
+		 * Stops the countdown.
+		 */
+		this.stop = function() {
+			clearInterval(this.id);
+			this.id = null;
+			this.remainingTime = -1;
+			toggleVisibility(expiryText, false);
+		}
+
+		/**
+		 * @private
+		 * Starts the countdown.
+		 */
+		this.start = function(remainingTime) {
+			this.stop();
+			this.remainingTime = remainingTime;
+			this.updateExpiryMsg(this.remainingTime);
+
+			var thisRef = this;
+			var handler = function()
+			{
+				thisRef.onInterval();
+			};
+			this.id = setInterval(handler, this.interval);
+		}
+
+		/**
+		 * @private
+		 * Updates an expiry message.
+		 */
+		this.updateExpiryMsg = function(remainingTime) {
+			var seconds = remainingTime / 1000;
+			var min = parseInt(seconds / 60);
+			var sec = parseInt(seconds % 60);
+
+		    expiryText.innerText = nnl_strings.oob_expire_msg.replace('{minutes}', min).replace('{seconds}', sec);
+		    toggleVisibility(expiryText, true);
+		}
+
+		/**
+		 * @private
+		 */
+		this.onInterval = function() {
+			this.remainingTime -= this.interval;
+			if(this.remainingTime < 0)
+				this.stop();
+			else
+				this.updateExpiryMsg(this.remainingTime);
+		}
+	}
+
+	/**
+	 * @private
+	 * The Countdown object.
+	 */
+	var countdown = new Countdown();
+})();

@@ -1,0 +1,137 @@
+var Utils =  {
+	isObject : function(o) {
+		if (typeof o === 'object' && o !== null) {
+			return true;
+		}
+		return false;
+	},
+	createUUID : function() {
+		var dt = new Date().getTime();
+	    var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+	        var r = (dt + Math.random()*16)%16 | 0;
+	        dt = Math.floor(dt/16);
+	        return (c==='x' ? r :(r&0x3|0x8)).toString(16);
+	    });
+	    return uuid;
+	},
+	isSessionPresent : function(sessionData) {
+		if (typeof sessionData === 'object' && sessionData !== null) {
+			return true;
+		}
+		return false;
+	},
+	isPushHandlePresent : function(sessionData) {
+		return (this.isSessionPresent(sessionData) &&
+				sessionData.pushHandle !== undefined &&
+				sessionData.pushHandle !== '');
+	},
+	isU2fCompatibleBrowser : function()
+	{
+		if ((navigator.userAgent.indexOf("Edge/"))!==-1) {
+			 return false;
+		}
+		
+		var nAgt = navigator.userAgent;
+		var browserName  = navigator.appName;
+		var fullVersion  = ''+parseFloat(navigator.appVersion); 
+		var majorVersion = parseInt(navigator.appVersion,10);
+		var verOffset,ix;
+		 
+		// In Opera 15+, the true version is after "OPR/"
+		if ((verOffset=nAgt.indexOf("OPR/"))!==-1) {
+		 browserName = "Opera";
+		 fullVersion = nAgt.substring(verOffset+4);
+		}
+		// In Chrome, the true version is after "Chrome"
+		else if ((verOffset=nAgt.indexOf("Chrome"))!==-1) {
+		 browserName = "Chrome";
+		 fullVersion = nAgt.substring(verOffset+7);
+		}
+		
+		// trim the fullVersion string at semicolon/space if present
+		if ((ix=fullVersion.indexOf(";"))!==-1)
+		   fullVersion=fullVersion.substring(0,ix);
+		if ((ix=fullVersion.indexOf(" "))!==-1)
+		   fullVersion=fullVersion.substring(0,ix);
+
+		majorVersion = parseInt(''+fullVersion,10);
+		if (isNaN(majorVersion)) {
+		 fullVersion  = ''+parseFloat(navigator.appVersion); 
+		 majorVersion = parseInt(navigator.appVersion,10);
+		}
+
+		if( ((browserName === "Chrome") && majorVersion >= 41) || (( (browserName === "Opera") && (majorVersion >= 39))) ) {
+			return true;
+		}
+		return false;
+	},
+	isDeviceInfoPresent : function(responseJson) {
+		return (typeof responseJson === 'object' && responseJson &&
+				typeof responseJson.additionalInfo === 'object' && responseJson.additionalInfo &&
+				typeof responseJson.additionalInfo.device === 'object' && responseJson.additionalInfo.device &&
+				typeof responseJson.additionalInfo.device.info === 'string' && responseJson.additionalInfo.device.info);
+	},
+	postMessage : function(msg, event) {
+		msg.iframe_id = "nnl_iframe";
+		if(typeof event === 'object' && event !== null) {
+			msg.fidoProtocol = event.data.fidoProtocol;
+			msg.opID = event.data.opID;
+			event.source.postMessage(msg, event.origin);
+		}
+		else
+			window.parent.postMessage(msg, "*");
+	},
+	ajaxSettings: function(url, data)
+	{
+		return {
+			url: 			url,						
+			data: 			data,
+			method: 		"POST",
+			dataType: 		"json",
+			headers: 		{"Content-Type": "application/json; charset=UTF-8"},
+			crossDomain: 	true,
+			xhrFields: 		{withCredentials: true},
+			timeout: 		10000,
+			cache: 			false
+		};
+	},
+	
+	setCallerOrigin: function(req, event)
+	{
+		if(event.callerOrigin !== undefined){
+			req.callerOrigin = event.callerOrigin;
+		}
+	},
+	setId: function(req, event)
+	{
+		if (Utils.isObject(event.data.extras) && Object.prototype.hasOwnProperty.call(event.data.extras, "correlationId")){
+			req.id = event.data.extras.correlationId;
+		}
+	},
+	setExtras: function(req, event)
+	{
+		if (Utils.isObject(event.data.extras))
+		{
+			req.extras = event.data.extras;
+		}
+	},	
+	setSessionData: function(req, sessionData)
+	{
+		if (Utils.isSessionPresent(sessionData)) {
+			req.sessionData = sessionData;
+		}		
+	},
+	setUserName: function(req, userName)
+	{
+		if (typeof userName === 'string')
+		{
+			req.userName = userName;
+		}
+	},
+	setUserDisplayName: function(req, event)
+	{
+		if (Utils.isObject(event.data.extras) && Object.prototype.hasOwnProperty.call(event.data.extras, "userDisplayName")) {
+			req.displayName = event.data.extras.userDisplayName;
+		}
+	}
+}

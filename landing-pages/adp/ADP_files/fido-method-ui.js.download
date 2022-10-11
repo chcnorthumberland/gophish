@@ -1,0 +1,208 @@
+var FIDOMethodUI = function(extras) {
+	// Current operation code for FIDO2 client.
+	var mOp;
+
+	this.getInitData = function(groupToVerify, operationType) {
+		return new Promise(function(resolve) {
+			// Set operation code for FIDO client.
+			mOp = (operationType === OperationType.AUTHENTICATION ? 'AUTH' : 'REG');
+
+			// Return the first method in the group to process.
+			var method = groupToVerify[0];
+
+			// Proceed to next step.
+			resolve({
+				state: OperationState.OP_UPDATE,
+				method: method
+			});
+		});
+	}
+
+	this.getUpdateData = function(method)  {
+		return new Promise(function(resolve, reject) {
+			if(method && method.state) {
+				if(method.state === MethodState.SUCCEEDED) {
+					// If method has succeeded, close dialog and proceed with success step.
+					resolve({
+						state: OperationState.OP_SUCCESS,
+						method: method
+					});
+				} else if(method.state === MethodState.PENDING) {
+					// Call FIDO client.
+					var protocol = '';
+					if(method.data.additionalInfo && method.data.additionalInfo.protocol) {
+						protocol = (method.data.additionalInfo.protocol.indexOf('web') !== -1 ? 'fido2' : 'uaf');
+					}
+
+					nnl.FIDOClient.process(null, mOp, protocol, method.data.message, extras)
+					.then(function(response) {
+						method.data.message = response.message;
+						resolve({
+							state: OperationState.OP_UPDATE,
+							method: method
+						});
+					})
+					.catch(function(response) {
+						reject({
+							outcome: response.outcome,
+							method: method,
+							exception: response.exception
+						});
+					});
+				}
+			}
+		});
+	}
+}
+
+var OOBMethodUI = function(extras) {
+	// Extra options.
+	var mExtras = extras;
+
+	var isReady = NNLUtils.loadScript('oob-ui.js').then(function() {
+		// When the close button is clicked, close dialog and store the canceled state.
+		OOBUI.onCancel = function() {
+			mCanceled = true;
+		}
+	});
+
+	// Current operation code for OOBUI.
+	var mOp;
+	// Indicates that the dialog was closed.
+	var mCanceled = false;
+
+	this.getInitData = function(groupToVerify, operationType)  {
+		// Call actual method only after instance is ready.
+		return isReady.then(function() {
+			return getInitData(groupToVerify, operationType);
+		})
+	}
+
+	function getInitData(groupToVerify, operationType)  {
+		mCanceled = false;
+
+		// Set operation code for OOBUI.
+		mOp = (operationType === OperationType.AUTHENTICATION ? 'AUTH' : 'REG');
+
+		// Set OOB mode query flags.
+		// TODO: get push handle if present.
+		var method = groupToVerify[0];
+		method.data = {
+			oobMode: {
+				raw: true,
+				qr: true,
+				push: false
+			}
+		}
+
+
+		if (mExtras != null) {
+			// Copy "qrType" if it is specified in extras.
+			if (mExtras.qrType != null) {
+				method.data.oobMode.qrType = mExtras.qrType;
+
+				// Copy also
+				if (mExtras.webUrl != null) {
+					method.data.oobMode.webUrl = mExtras.webUrl;
+				} else {
+					method.data.oobMode.webUrl = (mOp === 'AUTH' ? AppSdkConfig.oob.authBaseUrl : AppSdkConfig.oob.regBaseUrl);
+				}
+			}
+
+			// Copy "oobRefId" if it is specified in extras.
+			if (mExtras.oobRefId != null) {
+				method.data.oobRefId = mExtras.oobRefId;
+			}
+		}
+
+		// Proceed to next step.
+		return Promise.resolve({
+			state: OperationState.OP_UPDATE,
+			method: method
+		});
+	}
+
+	this.getUpdateData = function(method)  {
+		// Call actual method only after instance is ready.
+		return isReady.then(function() {
+			return getUpdateData(method);
+		})
+	}
+
+	function getUpdateData(method)  {
+		return new Promise(function(resolve, reject) {
+			if(mCanceled) {
+				// If dialog was closed during polling, cancel operation.
+				resolve({
+					state: OperationState.OP_CANCEL,
+					method: method
+				});
+			} else if(method && method.state) {
+				if(method.state === MethodState.SUCCEEDED) {
+					// If method has succeeded, proceed with success step.
+					resolve({
+						state: OperationState.OP_SUCCESS,
+						method: method
+					});
+
+				} else if(method.state === MethodState.AWAITING_USER_ACTION || method.state === MethodState.PENDING) {
+					// Prepare state for OOB UI
+					var state = {
+						op: mOp
+					}
+
+					// If mode result is present, that means that operation is starting.
+					// Pass QR code and push flag to OOB UI. 
+					var modeResult = method.data.modeResult;
+					if(modeResult) {
+						if(!modeResult.qrCode || !modeResult.qrCode.qrImage) {
+							reject({outcome: Outcome.INVALID_QR});
+							return;
+						}
+						state.oob = 'START';
+						state.qr = modeResult.qrCode.qrImage;
+						state.rawData = modeResult.rawData;
+						state.push = (modeResult.push && modeResult.push.status === 4000);
+
+						// Copy "qrType" if it is specified in extras.
+						if(mExtras != null && mExtras.qrType != null) {
+							state.qrType = mExtras.qrType;
+						}
+
+						ProgressIndicator.getInstance().suspend();
+					} else {
+						// Operation is in progress. Update OOB UI with remaining time.
+						state.oob = 'STATUS';
+						state.millis = method.lifetimeMillis;
+
+						// If device info is present, show that too.
+						if(method.data.additionalInfo && method.data.additionalInfo.device) {
+							state.device = method.data.additionalInfo.device.info;
+						}
+					}
+
+					// Update OOB UI with calculated state.
+					OOBUI.update(state);
+
+					// Repeat the step after timeout.
+					setTimeout(function() {
+						resolve({
+							state: OperationState.OP_UPDATE,
+							method: method
+						});
+					}, AppSdkConfig.oob.pollingInterval);
+				}
+			} else {
+				// If method was not provided, return failure (caller will handle errors).
+				reject({outcome: Outcome.FAILURE});
+			}
+		});
+	}
+
+	this.finish = function(method) {
+		isReady.then(function() {
+			OOBUI.hide();
+			ProgressIndicator.getInstance().resume();
+		});
+	}
+}

@@ -1,0 +1,19 @@
+function deleteCookie(name) {
+    try {
+        console.log("Delete cookie "+name);
+        var date = new Date();
+        date.setTime(date.getTime() + (-1*24*60*60*1000));
+        var expires = "; expires=" + date.toUTCString();
+        document.cookie = name + "="  + expires + "; domain=.adp.com; path=/";
+    } catch(e) {
+        console.log(e);
+    }
+}
+
+deleteCookie("RC");
+deleteCookie("PAASPORTAL");
+deleteCookie("ADPPORTAL");
+deleteCookie("ADPTLMPOD");
+deleteCookie("ADPIPORTAL");
+deleteCookie("ADPRROUTE");
+deleteCookie("DType");

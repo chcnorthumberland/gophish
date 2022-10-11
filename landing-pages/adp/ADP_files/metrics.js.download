@@ -1,0 +1,427 @@
+/**
+ * The enum defines the units.
+ * @enum {string}
+ */
+let MetricTimeUnit = {
+    DAY: "DAY",
+    WEEK: "WEEK",
+    MONTH: "MONTH"
+}
+
+/**
+ * The Enum of metric names to be stored.
+ * @enum {string}
+ */
+const MetricName = {
+    /**
+     * Key for counting the average time of adaptive authentication.
+     */
+    ADAPTIVE_AUTH_TIME: 'adaptiveAuthTime',
+
+    /**
+     * Key for counting the authentication average time.
+     */
+    AUTH_TIME: 'authTime',
+    /**
+     * Key for counting the average client processing time.
+     */
+    CLIENT_PROCESS_TIME: 'clientProcessTime',
+
+    /**
+     * Key for counting the invalid client.process-es
+     */
+    INVALID_CLIENT_PROCESS: 'invalidClientProcess'
+}
+
+/**
+ * Definition of the structure that contains array of metrics and the last update timestamp.
+ * @type {{ isTimeBased: boolean, lastUpdate: number, metrics: [Metric] }}
+ */
+
+/**
+ * Definition of the metric that contains count of the operations performed and the total of numeric
+ * @type {{ count: number, total: number }}
+ */
+
+/**
+ * @class
+ * @hideconstructor
+ * @classdesc
+ * A singleton which can be used to generate a report on historical data regarding to JS App SDK calls. 
+ */
+let Tabulator = (function () {
+    let instance = null;
+
+    function TabulatorImpl() {
+        const NNL_METRICS_STORAGE_KEY = 'nnlMetricsStorage';
+        const IFRAME_CHANNEL_BIND = 'nnl.metric.channel.bind';
+        const IFRAME_ID = 'nnl_iframe';
+        const DAY_IN_SECONDS = 86400;
+        const thisRef = this;
+
+        /**
+         * @type {MessageChannel}
+         */
+        const messageChannel = new MessageChannel();
+
+
+        /**
+         * Definition of the map containing the values of the metrics based on the metric name
+         *
+         * @type {{ MetricName: MetricSet }}
+         */
+        let mMetrics = {}
+
+        /**
+         * Defines the metricName and timer mapping
+         * @type {{MetricName: number}}
+         */
+        const mTimers = {};
+
+        /**
+         * Initializes the instance of tabulator class implementation.
+         */
+        this.init = function () {
+            bindIFrameChannel().then(
+                function () {
+                    let metricsStorage = localStorage.getItem(NNL_METRICS_STORAGE_KEY);
+                    if (metricsStorage == null && metricsStorage === '') {
+                        checkAllMetricsRollover();
+                        return;
+                    }
+
+                    let nnlMetricStorage = JSON.parse(metricsStorage);
+                    if (nnlMetricStorage != null) {
+                        if (nnlMetricStorage.config != null) {
+                            if (AppSdkConfig.metricConfig.unit !== nnlMetricStorage.config.unit) {
+                                reset();
+                            }
+                        }
+                        if (nnlMetricStorage.savedMetrics != null &&
+                            nnlMetricStorage.savedMetrics !== '') {
+                            mMetrics = nnlMetricStorage.savedMetrics
+                        }
+                    }
+                    checkAllMetricsRollover();
+                }
+            );
+        }
+
+        /**
+         * Update the total of the provided metric name
+         * @param metricName {MetricName}
+         */
+        function updateMetricName(metricName) {
+            // Call the "updateMetricValue" function with 0 value to increase only count.
+            // Prevents code duplication.
+            updateMetricValue(metricName, 0);
+        }
+
+        /**
+         * Update the total and value of the provided metric name.
+         *
+         * @param metricName {MetricName} The type of the metric
+         * @param value {number} The value
+         */
+        function updateMetricValue(metricName, value) {
+            if (typeof value !== 'number') {
+                throw new Error('The "value" parameter should be number')
+            }
+
+            checkRollover(metricName);
+            // If the metricSet doesn't exist crate initial one.
+            if (mMetrics[metricName] == null) {
+                mMetrics[metricName] = createNewMetricSet();
+            }
+
+            // Update the latest metric with count and total
+            mMetrics[metricName].lastUpdate = toSeconds(new Date());
+            if (value > 0) {
+                mMetrics[metricName].isTimeBased = true;
+            }
+            mMetrics[metricName].metrics[0].count++;
+            mMetrics[metricName].metrics[0].total += value;
+            store();
+        }
+
+        /**
+         * Update the count and the total of the metric.
+         *
+         * @param arguments.metricName {MetricName} The metric name to be updated.
+         * @param arguments.value {number} The value to be added to total.
+         */
+        this.updateMetric = function () {
+            if (arguments.length === 1) {
+                updateMetricName(arguments[0]);
+                return;
+            }
+
+            if (arguments.length === 2) {
+                updateMetricValue(arguments[0], arguments[1]);
+                return;
+            }
+            throw new Error("No overloading found for \"updateMetric\"")
+        }
+
+        /**
+         * Stores the time in ms for the provided metric name
+         *
+         * @param metricName {string} the unique name for keeping its own time
+         */
+        this.startTimer = function (metricName) {
+            mTimers[metricName] = Date.now();
+        }
+
+        /**
+         * Returns the time diff in ms from start to end for the provided metric name
+         *
+         * @param metricName {string}  the name for which needs to return time range
+         * @return number time diff in ms
+         */
+        this.endTimer = function (metricName) {
+            if (!Object.prototype.hasOwnProperty.call(mTimers, metricName)) {
+                return 0;
+            }
+            return Date.now() - mTimers[metricName];
+        }
+
+        /**
+         * Ends the timer for the provided metric name, updates metric set and stores it
+         *
+         * @param metricName {string} the name for which needs to store time range
+         */
+        this.updateMetricTime = function (metricName) {
+            thisRef.updateMetric(metricName, thisRef.endTimer(metricName));
+        }
+
+        /**
+         * Generates a report on historical information regarding to JS App SDK calls.
+         * @returns {string} JSON string metrics.
+         * @method Tabulator#getReport
+         */
+        this.getReport = function () {
+            let result = {
+                unit: getReportUnit()
+            };
+            for (let metricSetKey in mMetrics) {
+                result[metricSetKey] = [];
+                let metricSet = mMetrics[metricSetKey];
+                for (let i in metricSet.metrics) {
+                    let metric = metricSet.metrics[i];
+                    if (metric.count <= 0) {
+                        result[metricSetKey].push(0);
+                        continue;
+                	}
+                	
+                    if (metricSet.isTimeBased) {
+                        result[metricSetKey].push(Math.round(metric.total / metric.count));
+                        continue;
+                    }
+                    result[metricSetKey].push(metric.count);
+                }
+            }
+            return JSON.stringify(result);
+        }
+
+        
+        function getReportUnit() {
+            switch (AppSdkConfig.metricConfig.unit) {
+                case MetricTimeUnit.DAY:
+                    return "daily";
+                case MetricTimeUnit.WEEK:
+                    return "weekly";
+                case MetricTimeUnit.MONTH:
+                    return "monthly";
+            }
+        }
+
+        /**
+         * Getter for the metrics in the base64 encoded format.
+         * @returns {string} Base64 JSON string metrics.
+         */
+        this.getBase64Report = function () {
+            return btoa(thisRef.getReport())
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        /**
+         * Stores the metrics in the local storage.
+         */
+        function store() {
+            localStorage.setItem(NNL_METRICS_STORAGE_KEY, JSON.stringify({
+                config: AppSdkConfig.metricConfig,
+                savedMetrics: mMetrics,
+            }));
+        }
+
+        function reset() {
+            mMetrics = {};
+            store();
+        }
+
+        /**
+         * Checks all the metrics for rollover.
+         * @private
+         */
+        function checkAllMetricsRollover() {
+            for (let metricNameKey in MetricName) {
+                checkRollover(MetricName[metricNameKey])
+            }
+        }
+
+        /**
+         * @param metricName {MetricName} The metric name to be checked
+         * @private
+         */
+        function checkRollover(metricName) {
+            if (mMetrics[metricName] == null) {
+                return;
+            }
+
+            let diff = calculateDiff(mMetrics[metricName].lastUpdate, AppSdkConfig.metricConfig.unit);
+            if (diff === 0) {
+                return;
+            }
+
+            if (diff >= 1) {
+                shiftMetricList(metricName, diff);
+            }
+        }
+
+        /**
+         * Calculates the diff between current and provided time in the selected units.
+         *
+         * @param timeStamp {number} number in Unix Epoch format in seconds format.
+         * @param unit {MetricTimeUnit} the unit with which the diff should be counted.
+         * @returns {number} The diff in the {@link MetricTimeUnit} format.
+         * @private
+         */
+        function calculateDiff(timeStamp, unit) {
+            let lastUpdateInUnits = countUnits(new Date(timeStamp * 1000), unit);
+            let currentInUnits = countUnits(new Date(), unit);
+            return currentInUnits - lastUpdateInUnits;
+        }
+
+        /**
+         * Counts the diff from Unix epoch start, to provided timestamp.
+         *
+         * @param timestamp {Date} a Date object.
+         * @param unit {MetricTimeUnit} the unit with which the diff should be counted.
+         * @private
+         */
+        function countUnits(timestamp, unit) {
+            let unixEpoch = new Date(1970, 0, 1);
+            let yearDiff = timestamp.getFullYear() - unixEpoch.getFullYear();
+            let monthDiff = timestamp.getMonth() - unixEpoch.getMonth();
+            let dayDiff = (toSeconds(timestamp) - toSeconds(unixEpoch)) / DAY_IN_SECONDS;
+            switch (unit) {
+                case MetricTimeUnit.MONTH:
+                    return monthDiff + (yearDiff * 12);
+                case MetricTimeUnit.WEEK:
+                    return Math.floor(((toSeconds(timestamp) / DAY_IN_SECONDS) + 3) / 7);
+                case MetricTimeUnit.DAY:
+                default:
+                    return dayDiff;
+            }
+        }
+
+        function bindIFrameChannel() {
+            return NNLUtils.waitForIframe().then(function () {
+                let nnlIframe = document.getElementById(IFRAME_ID);
+                let targetOrigin = NNLUtils.getOrigin();
+                // Listen for response on this end of the channel.
+                messageChannel.port1.onmessage = iframeMessageReceived;
+                let data = {
+                    type: IFRAME_CHANNEL_BIND
+                }
+                // Transfer the other end of the channel to iframe.
+                nnlIframe.contentWindow.postMessage(data, targetOrigin, [messageChannel.port2]);
+            });
+        }
+
+
+        /**
+         * Adds new metric to the list.
+         * Removes item from the list if length of metric list exceeds the "count" configuration.
+         *
+         * @param metricName {MetricName}
+         * @param diff {number}
+         * @private
+         */
+        function shiftMetricList(metricName, diff) {
+            // Update the lastUpdate timestamp.
+            mMetrics[metricName].lastUpdate = toSeconds(new Date());
+            for (let i = 0; i < Math.min(diff, AppSdkConfig.metricConfig.range); i++) {
+                // Add new metric to the metric list.
+                mMetrics[metricName].metrics.unshift({
+                    count: 0,
+                    total: 0
+                });
+
+                // Trim the list if it exceeds the count.
+                if (mMetrics[metricName].metrics.length > AppSdkConfig.metricConfig.range) {
+                    mMetrics[metricName].metrics.pop();
+                }
+            }
+            store();
+        }
+
+        /**
+         * Converts the {@link Date} object to the epoch number represented in seconds.
+         * @param date {Date} The date to be converted.
+         * @returns {number} the date in epoch represented in milliseconds.
+         * @private
+         */
+        function toSeconds(date) {
+            return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 1000;
+        }
+
+        /**
+         * Creates a new object of {@link MetricSet}.
+         *
+         * @returns {MetricSet}
+         * @private
+         */
+        function createNewMetricSet() {
+            return {
+                lastUpdate: toSeconds(new Date()),
+                metrics: [{count: 0, total: 0}]
+            }
+        }
+
+        /**
+         * @param event {MessageEvent} the event received through the bound channel.
+         */
+        function iframeMessageReceived(event) {
+            let data = event.data;
+            switch (data.tabulatorEvent) {
+                case 'UPDATE_METRIC_TIME':
+                    thisRef.updateMetricTime(data.tabulatorMetricName);
+                    break;
+                case 'INC_COUNT':
+                    thisRef.updateMetric(data.tabulatorMetricName);
+                    break;
+                case 'START_TIMER':
+                    thisRef.startTimer(data.tabulatorMetricName);
+                    break;
+            }
+        }
+    }
+
+    return {
+        /**
+         * Returns a Tabulator object.
+         * @returns {Tabulator} An instance of Tabulator object.
+         * @method Tabulator.getInstance
+         * @static
+         */
+        getInstance: function () {
+            if (instance == null) {
+                instance = new TabulatorImpl();
+                instance.init();
+            }
+            return instance;
+        }
+    }
+})();

@@ -1,0 +1,1462 @@
+// Common classes used both in adaptive and regular SDKs.
+
+/**
+ * Defines type of fido operation
+ * @enum {string}
+ */
+var FidoOperationType = {
+	REG: 'REG',
+	AUTH: 'AUTH',
+	LIST_REG: 'LIST_REG',
+	RENAME_REG: 'RENAME_REG',
+	DELETE_REG: 'DELETE_REG'
+}
+
+/**
+ * Defines state of ongoing adaptive operation which should be used to determine next step on adaptive process.
+ * @enum {string}
+ */
+var OperationState = {
+	/**
+	 * should continue with init.
+	 */
+	OP_INIT: 'OP_INIT',
+	/**
+	 * should continue with update.
+	 */
+	OP_UPDATE: 'OP_UPDATE',
+	/**
+	 * should complete with success result.
+	 */
+	OP_CANCEL: 'OP_CANCEL',
+	/**
+	 * Should cancel entire adaptive process.
+	 */
+	OP_SUCCESS: 'OP_SUCCESS'
+}
+
+/**
+ *  Defines type of ongoing adaptive operation. {@link MethodUI} implementations use this to show appropriate UI.
+ *  @enum {string}
+ */
+var OperationType = {
+	/**
+	 * Indicates registration operation.
+	 */
+    REGISTRATION: 'REGISTRATION',
+	/**
+	 * Indicates authentication operation.
+	 */
+    AUTHENTICATION: 'AUTHENTICATION'
+}
+
+/**
+ * Specifies the type of QR code to generate.
+ * @enum {string}
+ */
+var QRType = {
+	/**
+	 * The QR code will be generated for mobile apps only.
+	 * The QR code will be specific for the relaying party (the OOB data will not include the operation endpoint).
+	 */
+	APP_RP_SPECIFIC: 'APP_RP_SPECIFIC',
+	/**
+	 * The QR code will be generated for mobile apps only.
+	 * The QR code will be generated for any relaying party (the OOB data will include the operation endpoint).
+	 */
+	APP_ANY_RP: 'APP_ANY_RP',
+	/**
+	 * The QR code will be generated for mobile apps and browsers.
+	 * The QR code will be specific for the relaying party (the OOB data will not include the operation endpoint).
+	 */
+	UNIVERSAL_RP_SPECIFIC: 'UNIVERSAL_RP_SPECIFIC',
+	/**
+	 * The QR code will be generated for mobile apps and browsers.
+	 * The QR code will be generated for any relaying party (the OOB data will include the operation endpoint).
+	 */
+	UNIVERSAL_ANY_RP: 'UNIVERSAL_ANY_RP'
+}
+
+/**
+ * Adaptive method types.
+ * @type {Object}
+ * @name AdaptiveType
+ * @property {string} EMAIL Indicates method that uses Email OTP.
+ * @property {string} SMS Indicates method that uses SMS OTP.
+ * @property {string} PHOTO Indicates method that uses Photo ID verification.
+ * @property {string} FIDO Indicates method that uses FIDO protocol.
+ * @property {string} FIDO_OOB Indicates method that uses OOB.
+ */
+var AdaptiveType = new (function() {
+	// Adaptive types.
+	this.EMAIL = 'Email OTP';
+	this.SMS = 'SMS OTP';
+	this.PHOTO = 'Photo ID';
+	this.FIDO = 'FIDO Auth';
+	this.FIDO_OOB = 'FIDO OOB Auth';
+
+	// Adaptive names.
+	this.names = {};
+	this.names[this.EMAIL] = 'OTP Using Email';
+	this.names[this.SMS] = 'OTP Using SMS';
+	this.names[this.PHOTO] = 'Using Photo ID';
+	this.names[this.FIDO] = '';
+	this.names[this.FIDO_OOB] = '';
+})();
+
+
+/**
+ * Adaptive method types.
+ * @type {Object}
+ * @name AuthMethod
+ */
+var AuthMethod = {
+	FIDO2_AUTH:'FIDO2-AUTH',
+	UAF_AUTH: 'UAF-AUTH',
+	OOB_PUSH: 'OOB-PUSH'
+}
+
+/**
+ * @enum {string}
+ */
+var MethodState = {
+	SUCCEEDED:"SUCCEEDED",
+	AWAITING_USER_ACTION:"AWAITING_USER_ACTION",
+	PENDING:"PENDING",
+	IN_PROGRESS:"IN_PROGRESS",
+	FAILED:"FAILED"
+}
+
+
+/**
+ * @classdesc A singleton factory class to create and provide {@link MethodUI} implementations for particular method types.
+ * @interface
+ */
+var MethodUIFactory = (function() {
+	var mInstance = null;
+
+	return {
+		 /**
+	     * Returns the MethodUIFactory instance.
+	     * If no instance was set using setInstance method, creates and returns DefaultMethodUIFactory instance
+	     * @returns {MethodUIFactory} Stored instance of MethodUIFactory.
+	     * @memberof MethodUIFactory
+	     */
+		getInstance: function() {
+			if(mInstance === null) {
+				mInstance = new DefaultMethodUIFactory();
+			}
+
+			return mInstance;
+		},
+		/**
+	     * Sets the MethodUIFactory instance.
+	     * @param {MethodUIFactory} instance The new instance.
+	     * @memberof MethodUIFactory
+	     */
+		setInstance: function(instance) {
+			mInstance = instance;
+		}
+	};
+})();
+
+/**
+ * @classdesc Default implementation of MethodUIFactory.
+ * @class
+ * @implements MethodUIFactory
+ */
+var DefaultMethodUIFactory = function() {
+	/**
+	 * Creates {@link MethodUI} instance for given type.
+	 * @param {AdaptiveType} methodType The type of desired MethodUI. 
+     * @param {Extras} [extras] Extra options.
+     * @returns {object} MethouUI class instance of given type.
+	 */
+	this.createMethodUI = function(methodType, extras) {
+		if(methodType === AdaptiveType.EMAIL || methodType === AdaptiveType.SMS) {
+			return new OtpMethodUI(extras);
+		}
+
+		if(methodType === AdaptiveType.FIDO) {
+			return new FIDOMethodUI(extras);
+		}
+
+		if(methodType === AdaptiveType.FIDO_OOB) {
+			return new OOBMethodUI(extras);
+		}
+
+		throw {outcome: Outcome.NO_MATCH};
+	}
+
+	/**
+	 * Indicates whether the given method type is supported by the factory or not.
+	 * @param {AdaptiveType} methodType Method type to check.
+	 * @returns {boolean} true if method is supported or false otherwise.
+	 */
+	this.isSupported = function(methodType) {
+		switch(methodType) {
+		case AdaptiveType.EMAIL:
+		case AdaptiveType.SMS:
+		case AdaptiveType.FIDO:
+		case AdaptiveType.FIDO_OOB:
+			return true;
+
+		default:
+			return false;
+		}
+	}
+
+	/**
+	 * Returns instruction message for given method type.
+	 * @param {AdaptiveType} methodType Method type to get instruction for.
+	 * @returns {string} Instructions string for method type.
+	 */
+	this.getInstructions = function(methodType) {
+		switch(methodType) {
+		case AdaptiveType.EMAIL:
+			return 'Add your email address to help secure your account';
+
+		case AdaptiveType.SMS:
+			return 'Add your phone number to help secure your account';
+
+		default:
+			return '';
+		}
+	}
+}
+
+/**
+ * This interface defines a method for displaying transaction UI
+ * @interface ITransactionUI
+ */
+
+/**
+ * This method implementation should display a Transaction Authorization UI
+ * @method ITransactionUI#openUI
+ * @param {string} transactionContent base64 encoded transaction content
+ * @param {string} contentType The MIME-Type of the content, e.g. "text/plain"
+ * @returns {Promise} A promise that will be resolved with {Outcome:SUCCESS} or {Outcome:CANCELED} indicating user's choice.
+ */
+
+/**
+ * Default implementation of ITransactionUI.
+ * @implements {ITransactionUI}
+ */
+var DefaultTransactionUI = function() {
+	var popup, authorizeBtn, declineBtn;
+
+	var isReady = NNLUtils.loadHTML('transaction-ui.html', 'nnl-transaction-ui-section')
+		.then(function() {
+			document.querySelector('#nnl-transaction-text').innerHTML = '';
+			popup = document.getElementById('nnl-transaction-ui');
+			authorizeBtn = document.getElementById('nnl-transaction-authorize');
+			declineBtn = document.getElementById('nnl-transaction-decline');
+		});
+
+	// Reference to the "resolve" function of the Promise returned by openUI. 
+	var returnResult;
+
+	// Authorize button click handler.
+	function onAuthorize() {
+		hideUI();
+		returnResult(Outcome.SUCCESS);
+	}
+
+	// Decline button click handler.
+	function onDecline() {
+		hideUI();
+		returnResult(Outcome.CANCELED);
+	}
+	
+	function hideUI() {
+		// Hide the UI and remove click handlers. 
+		popup.style.display = 'none';
+		authorizeBtn.removeEventListener('click', onAuthorize);
+		declineBtn.removeEventListener('click', onDecline);
+	}
+
+	this.openUI = function(transactionText) {
+		return isReady.then(function() {
+			// Add click handlers
+			authorizeBtn.addEventListener('click', onAuthorize);
+			declineBtn.addEventListener('click', onDecline);
+			// Display UI
+			var decodedText = atob(transactionText.replace(/-/g, '+').replace(/_/g, '/'));
+			document.querySelector('#nnl-transaction-text').innerText = decodedText;
+			popup.style.display = 'block';
+
+			return new Promise(function(resolve) {
+				returnResult = resolve;
+			});
+		});
+	}
+}
+
+/**
+ * @classdesc A singleton factory class to create and provide {@link ITransactionUI} implementations.
+ * @interface
+ */
+var TransactionUIFactory = (function() {
+	var mInstance = null;
+
+	return {
+		/**
+		 * Returns the TransactionUIFactory instance.
+		 * If no instance was set using setInstance method, creates and returns DefaultTransactionUIFactory instance
+		 * @returns {TransactionUIFactory} Stored instance of TransactionUIFactory.
+		 * @memberof TransactionUIFactory
+		 */
+		getInstance: function() {
+			if(mInstance === null) {
+				mInstance = new DefaultTransactionUIFactory();
+			}
+
+			return mInstance;
+		},
+		/**
+		 * Sets the TransactionUIFactory instance.
+		 * @param {TransactionUIFactory} instance The new instance.
+		 * @memberof TransactionUIFactory
+		 */
+		setInstance: function(instance) {
+			mInstance = instance;
+		}
+	};
+})();
+
+/**
+ * This method implementation should create and return {@link ITransactionUI} implementation.
+ * @method TransactionUIFactory#createTransactionUIInstance
+ * @returns {ITransactionUI} The created instance.
+ */
+
+/**
+ * @classdesc Default implementation of ITransactionUIFactory.
+ * @class
+ * @implements ITransactionUIFactory
+ */
+var DefaultTransactionUIFactory = function() {
+	this.createTransactionUIInstance = function() {
+		return new DefaultTransactionUI();
+	}
+}
+
+/**
+ * This interface defines methods to get operation results information
+ * @interface IOperationResultListener
+ */
+
+/**
+ * This method implementation handles operations result on complete
+ * @method IOperationResultListener#onComplete
+ * @param {FidoOperationType} operationType The type of operation
+ * @param {OperationData} operationData The operation data object that contains the result data of completed operation
+ * @param {Extras} extras Extra options specified for the operation
+ */
+
+/**
+ * OperationData object provided in {@link IOperationResultListener#onComplete|IOperationResultListener.onComplete} method.
+ * <br>The following table illustrates which properties will be set depending on operation.
+ * {@link FidoOperationType}    | Properties
+ * ---------------------------- | --------------------------------------------
+ * FidoOperationType.REG        | protocolFamily, additionalInfo
+ * FidoOperationType.AUTH       | userName, protocolFamily, additionalInfo
+ * FidoOperationType.LIST_REG   | registrations
+ * FidoOperationType.DELETE_REG | handle
+ * FidoOperationType.RENAME_REG | handle
+ *
+ * @type {object}
+ * @name OperationData
+ * @property {string} [protocolFamily] Either "uaf" or "web".
+ * @property {object} [additionalInfo] Additional information from Server.
+ * @property {Array<object>} [registrations] A list of user's active registered FIDO authenticators.
+ * @property {object} [handle] Handle of the deleted or renamed authenticator.
+ * @property {string} [userName] The userName of the user that performed the operation.
+ * @property {object} [quickData] Data returned from server for quick Authentication.
+ */
+
+/**
+ * This method implementation handles operations result on failure
+ * @method IOperationResultListener#onFailure
+ * @param {FidoOperationType} operationType The operation type
+ * @param {Error} error The result object containing failure information
+ */
+
+/**
+ * The error object provided in {@link IOperationResultListener#onFailure|IOperationResultListener.onFailure} method.
+ * @type {object}
+ * @name Error
+ * @property {Outcome} outcome Result code returned after processing a FIDO request (see {@link Outcome} object for possible values).
+ * @property {Object} [additionalInfo] Additional info returned from the server
+ * @property {number} [serverStatusCode] The statusCode from the server.
+ */
+
+/**
+ * @class
+ * @hideconstructor
+ * @classdesc
+ * Implements {@link IOperationResultListener} to cache data about users and their
+ * registrations after successful operations. Also provides methods for accessing
+ * the cached data.
+ * The instance should be retrieved by calling {@link OperationResultListenerFactory.getListenerInstance|OperationResultListenerFactory.getListenerInstance()}
+ * @implements {IOperationResultListener}
+ */
+var UserDataCache = function () {
+
+	var _this = this;
+	const KEY_USER_DATA = 'userDataCache';
+
+	/**
+	 * After each successful operation updates cached user data.
+	 * @override
+	 */
+	this.onComplete = function(operationType, operationData, extras) {
+		AppSdkInfo.getDeviceId().then(function(thisDeviceID) {
+			switch(operationType) {
+				case FidoOperationType.REG:
+				case FidoOperationType.AUTH:
+					addRegistration(operationData, thisDeviceID);
+					break;
+				case FidoOperationType.LIST_REG:
+				case FidoOperationType.DELETE_REG:
+					updateRegistrations(operationData, thisDeviceID);
+					break;
+				default:
+					break;
+			}
+		});
+	}
+
+	/**
+	 * Does nothing.
+	 * @override
+	 */
+	this.onFailure = function(operationType, error) {}
+
+	/**
+	 * Returns a JSON object containing cached data for the specified user.
+	 * <br>The built in properties in the returned object are listed below.
+	 * <br>The object also will contain any custom properties added using the {@link UserDataCache#setUserData|setUserData} method.
+	 *
+	 * Property                  | Type   | Description
+	 * ------------------------- | ------ | -------------
+	 * fido2                     | Object | Object containing information for FIDO2 registrations.
+	 * fido2.credentialIds       | Array  | List of credential IDs of local FIDO2 registrations.
+	 * uaf                       | Object | Object containing information for UAF registrations.
+	 * uaf.keyIds                | Array  | List of key IDs of local UAF registrations.
+	 * oob                       | Object | Object containing information about OOB registration.
+	 * oob.device                | String | The device ID of the second device used during OOB registration.
+	 * oob.pushHandle            | String | The push handle for the second device.
+	 *
+	 * @param {string} userName User name to retrieve data for.
+	 * @returns {object} JSON object with user's data.
+	 */
+	this.getUserData = function(userName) {
+		userName = userName || AppSdk.getActiveUser();
+		if(userName == null) {
+			return null;
+		}
+
+		// Load user data or create default empty object.
+		var userData = NNLStorage.getItem(KEY_USER_DATA) || '{}';
+		userData = JSON.parse(userData);
+
+		userData[userName] = userData[userName] || {};
+		
+		// Create userData.oob object if it does not exist.
+		userData[userName].oob = userData[userName].oob || {};
+
+		// Create userData.fido2 structure if it does not exist.
+		userData[userName].fido2 = userData[userName].fido2 || {};
+		userData[userName].fido2.credentialIds = userData[userName].fido2.credentialIds || [];
+		
+		// Create uaf structure if it does not exist
+		userData[userName].uaf = userData[userName].uaf || {};
+		userData[userName].uaf.keyIds = userData[userName].uaf.keyIds || [];
+
+		return userData[userName];
+	}
+
+	/**
+	 * Stores the specified data in the cache for the specified user.
+	 * <br>Note that the data will be stored as is, and the next call to {@link UserDataCache#getUserData|getUserData}
+	 * will return this object. In order to add a custom property to the cached data,
+	 * first call {@link UserDataCache#getUserData|getUserData}, add the new property to the returned data, then call this
+	 * method to store it.
+	 * <br> If the data parameter is not specified, is null or is empty, then the cached data for the specified user will be deleted.
+	 * @param {string} userName User name to set data for.
+	 * @param {Object} [data] user's data to be cached.
+	 */
+	this.setUserData = function(userName, data) {
+		if(userName == null) {
+			return null;
+		}
+
+		// Load data from NNL storage.
+		var userData = NNLStorage.getItem(KEY_USER_DATA) || '{}';
+		userData = JSON.parse(userData);
+		// If data is not provided or is empty object, delete the existing data.
+		// Otherwise override the existing data.
+		if(isEmpty(data)) {
+			delete userData[userName];
+		} else {
+			// check if the user is new and the maximum number of users in userDataCache is equal to maxNumberOfCachedUsers 
+			if(Object.keys(userData).length >= AppSdkConfig.maxNumberOfCachedUsers && userData[userName] == null) {
+				// then delete the least recently updated user  
+				var lruUser = Object.keys(userData).reduce(function(acc, el) { 
+					return userData[el].lastUpdatedTimestamp < userData[acc].lastUpdatedTimestamp  ? el : acc });
+				delete userData[lruUser];
+			}
+			
+			userData[userName] = data;
+			
+			// Add/Update current timestamp for the User data.
+			userData[userName].lastUpdatedTimestamp = new Date().getTime();
+		}
+
+		// Save data back to local storage and cookies.
+		userData = JSON.stringify(userData);
+		NNLStorage.setItem(KEY_USER_DATA, userData);
+	}
+
+	function addRegistration(operationData, thisDeviceID) {
+		// In case of authentication the userName is supplied in the operationData.
+		// In case of registration the app is expected to set the active user name before starting the registration.
+		var userName = operationData.userName || AppSdk.getActiveUser();
+		// If active user is missing or data is not available, nothing can be added in cache
+		if(userName == null || isEmpty(operationData.additionalInfo)) {
+			return;
+		}
+
+		var userData = _this.getUserData(userName);
+ 
+		// If the operation was done on another device, then it is an OOB operation 
+		if(operationData.additionalInfo.device != null && operationData.additionalInfo.device.id !== thisDeviceID) {
+			userData.oob.device = operationData.additionalInfo.device.id;
+			if(operationData.additionalInfo.push != null && operationData.additionalInfo.push.pushHandle != null) {
+				userData.oob.pushHandle = operationData.additionalInfo.push.pushHandle;
+			} 
+		} else {
+			// Get the list of authenticators used during the operation.
+			var authenticatorsResult = operationData.additionalInfo.authenticatorsResult || [];
+			if(authenticatorsResult.length > 0) {
+				if(operationData.protocolFamily === 'web') {
+					// Add the new credentials ID to the list if it does not exist.
+					if (userData.fido2.credentialIds.indexOf(authenticatorsResult[0].handle) === -1) {
+						userData.fido2.credentialIds.push(authenticatorsResult[0].handle);
+					}
+				} else if(operationData.protocolFamily === 'uaf') {
+					// Add the new keyID to the list if it does not exist.
+					if(userData.uaf.keyIds.indexOf(authenticatorsResult[0].handle) === -1) {
+						userData.uaf.keyIds.push(authenticatorsResult[0].handle);
+					}
+				}
+			}
+		}
+
+		_this.setUserData(userName, userData);
+	}
+
+	function updateRegistrations(operationData, thisDeviceID) {
+		var userName = AppSdk.getActiveUser();
+		// Load data for user.
+		var userData = _this.getUserData(userName);
+		if(userData === null) {
+			return;
+		}
+
+		// In case of deregistration operation remove the deleted handle from list of cached handles.
+		if(operationData.handle != null) {
+			// As the protocol is not available, filter lists for both protocols.
+			userData.fido2.credentialIds = userData.fido2.credentialIds.filter(function(handle) {
+				return handle !== operationData.handle;
+			});
+			userData.uaf.keyIds = userData.uaf.keyIds.filter(function(handle) {
+				return handle !== operationData.handle;
+			});
+			_this.setUserData(userName, userData);
+			return;
+		}
+
+		// In case of list registrations operations update the lists of cached handles
+		// by intersecting them with available handles.
+		var credentialIds = [];
+		var keyIds = [];
+		// delete pushHandle 
+		delete userData.oob.pushHandle;
+
+		// Loop over the registrations.
+		operationData.registrations.forEach(function(registration) {
+			if(registration.protocol === 'fido2') {
+				if(userData.fido2.credentialIds.indexOf(registration.handle) !== -1) {
+					credentialIds.push(registration.handle);
+				}
+				// If a fido2 registration is for this device and is not in the list, add it.
+				if(registration.device === thisDeviceID && credentialIds.indexOf(registration.handle) === -1) {
+					credentialIds.push(registration.handle);
+				}
+
+			} else if(registration.protocol === 'uaf') {
+				if(userData.uaf.keyIds.indexOf(registration.handle) !== -1) {
+					keyIds.push(registration.handle);
+				}
+				// If a fido2 registration is for this device and is not in the list, add it.
+				if(registration.device === thisDeviceID && keyIds.indexOf(registration.handle) === -1) {
+					keyIds.push(registration.handle);
+				}
+			}
+
+			// Save the push handle of the last registered device if present.
+			if(registration.push != null) {
+				userData.oob.device = registration.device;
+				userData.oob.pushHandle = registration.push.pushHandle;
+			}
+		});
+
+		// Override localCredentials with filtered list.
+		userData.fido2.credentialIds = credentialIds;
+		userData.uaf.keyIds = keyIds;
+		// Save data for user.
+		_this.setUserData(userName, userData);
+	}
+	
+	function isEmpty(obj) {
+		if(obj == null) {
+			return true;
+		}
+
+		for(var prop in obj) {
+			if(Object.prototype.hasOwnProperty.call(obj, prop)) {
+				return false;
+			}
+		}
+
+		return JSON.stringify(obj) === JSON.stringify({});
+	}
+}
+
+/**
+ * @class
+ * @hideconstructor
+ * @classdesc A singleton factory class to create and provide {@link IOperationResultListener} implementations.
+ */
+var OperationResultListenerFactory = (function() {
+	var mInstance = null;
+
+	return {
+		/**
+		 * Returns the stored IOperationResultListener instance.
+		 * If no instance was set using {@link OperationResultListenerFactory.setListenerInstance|setListenerInstance} method,
+		 * creates and returns {@link UserDataCache} instance.
+		 * @returns {IOperationResultListener} Stored instance of IOperationResultListener.
+		 * @memberof OperationResultListenerFactory
+		 */
+		getListenerInstance: function() {
+			if(mInstance === null) {
+				mInstance = new UserDataCache();
+			}
+
+			return mInstance;
+		},
+		/**
+		 * Sets the IOperationResultListener instance.
+		 * @param {IOperationResultListener} instance The new instance.
+		 * @memberof OperationResultListenerFactory
+		 */
+		setListenerInstance: function(instance) {
+			mInstance = instance;
+		}
+	};
+})();
+
+var NNLUtils = new (function() {
+	const IFRAME_ID = 'nnl_iframe';
+	// References to the NNL iframe tag and its origin.
+	var nnlIframe;
+	var nnlIframeOrigin;
+
+	var SDK_URL = null;
+	if(document.currentScript) {
+		SDK_URL = document.currentScript.src;
+	} else {
+		// document.currentScript is not supported on IE, try to get url from a stack trace.
+		try {
+			throw new Error();
+		} catch(err) {
+			// Find the second match for the "at" string to get file src url from stack.
+			// Specifically works with the format of stack traces in IE.
+			var stackDetails = (/.*at [^(]*\((.*):(.+):(.+)\)$/ig).exec(err.stack);
+			SDK_URL = stackDetails && stackDetails[1];
+		}
+	}
+	SDK_URL = SDK_URL && SDK_URL.replace('js/utils.js', '');
+
+	// Returns a promise that will be resolved when document loading is complete.
+	function documentReady() {
+		return new Promise(function(resolve) {
+			if(document.readyState === 'loading') {
+				// If the document is still loading, wait for it to complete.
+				document.addEventListener('DOMContentLoaded', resolve);
+			} else {
+				// Otherwise resolve right away.
+				resolve();
+			}
+		});
+	}
+
+	// Returns a promise that will be resolved when iframe is loaded and rejected when loading fails.
+	function loadIframe() {
+		return new Promise(function(resolve, reject) {
+			nnlIframe = document.getElementById(IFRAME_ID);
+			// If the iframe is not present in the document, then create a new element and load the iframe.
+			// The promise will be resolved on successful load and rejected on error.
+			if(nnlIframe === null) {
+				nnlIframe = document.createElement('iframe');
+				nnlIframe.src = SDK_URL + 'iframe.jsp';
+				nnlIframe.id = IFRAME_ID;
+				nnlIframe.name = IFRAME_ID;
+				nnlIframe.style = 'display:none';
+				nnlIframe.onload = resolve;
+				nnlIframe.onerror = reject;
+				document.body.appendChild(nnlIframe);
+			} else {
+				// If the iframe is already in the page, resolve the promise.
+				resolve();
+			}
+		});
+	}
+
+	// Returns a promose that will be resolved when a ready event is received from the iframe.
+	function connectToIframe() {
+		return new Promise(function(resolve) {
+			function readyCallback(event) {
+				nnlIframeOrigin = NNLUtils.getOrigin(nnlIframe.src);
+				// Once iframe has reported for duty, remove event listener and resolve the promise.
+				if(event.origin === nnlIframeOrigin && event.data && event.data.type === 'nnl.iframeReady') {
+					console.log('Connection with the NNL iframe is established.');
+					window.removeEventListener('message', readyCallback);
+
+					nnlIframe.contentWindow.postMessage({type: 'nnl.ready'}, nnlIframeOrigin);
+					resolve();
+				}
+			}
+
+			// Start listening from message.
+			window.addEventListener('message', readyCallback, false);
+		});
+	}
+
+	// Load and connect to the iframe and store the resulting promise.
+	var nnlIframeLoaded = documentReady()
+	.then(loadIframe)
+	.then(connectToIframe);
+
+	// Returns a promise that will be resolved when the iframe is loaded and ready for communication
+	// and will be rejected otherwise.
+	this.waitForIframe = function() {
+		return nnlIframeLoaded.then(function() {
+			return Promise.all([
+				NNLUtils.loadCSS('nnlsdk.css'),
+				NNLUtils.loadHTML('utils.html', 'nnl-utils-section'),
+				NNLUtils.loadScript('metrics.js')
+			]);
+		});
+	}
+
+	this.loadScript = function(scriptName, scriptFolder) {
+		scriptFolder = scriptFolder || 'js';
+		return new Promise(function(resolve, reject) {
+			var existing = document.querySelector('script[src*="' + scriptName + '"]');
+			if(existing === null) {
+				var script = document.createElement('script');
+				script.src = SDK_URL + scriptFolder + '/' + scriptName;
+				script.onload = resolve;
+				script.onerror = reject;
+				document.head.appendChild(script);
+			} else {
+				resolve();
+			}
+		});
+	}
+
+	this.loadCSS = function(cssName) {
+		return new Promise(function(resolve, reject) {
+			var existing = document.querySelector('link[href*="' + cssName + '"]');
+			if(existing === null) {
+				var link = document.createElement('link');
+				link.rel = 'stylesheet';
+				link.type = 'text/css';
+				link.href = SDK_URL + 'css/' + cssName;
+				link.onload = resolve;
+				link.onerror = reject;
+				document.head.appendChild(link);
+			} else {
+				resolve();
+			}
+		});
+	}
+
+	// Maps element ID to an object containing load callback and promise.
+	var lfHandles = {};
+	// Add message event listener for LOAD_FILE operation.
+	window.addEventListener('message', function(event) {
+		if(event.origin === nnlIframeOrigin && event.data && event.data.op === 'LOAD_FILE') {
+			// Call the load callback for requested element ID.
+			lfHandles[event.data.elementID].onLoad(event.data.content);
+		}
+	}, false);
+
+	this.loadHTML = function(htmlName, elementID) {
+		// If the file for this elementID is requested the first time, execute the LOAD_FILE operation.
+		if(!lfHandles[elementID]) {
+			// Create mapping to indicate the ongoing operation.
+			lfHandles[elementID] = {};
+			// Store the promise that will be returned to the caller.
+			lfHandles[elementID].promise = new Promise(function(resolve, reject) {
+				// Create the callback that will be called by the message event handler.
+				lfHandles[elementID].onLoad = function(content) {
+					// If file is successfully loaded, insert it into DOM and resolve
+					if(content) {
+						var div = document.createElement('div');
+						div.id = elementID;
+						div.innerHTML = content;
+						document.body.appendChild(div);
+						resolve();
+					} else {
+						reject();
+					}
+				}
+
+				var message = {
+		    		op: 'LOAD_FILE',
+		    		elementID: elementID,
+		    		url: SDK_URL + 'html/' + htmlName
+			    }
+
+			    nnlIframeLoaded.then(function() {
+					var targetOrigin = NNLUtils.getOrigin(message.url);
+					nnlIframe.contentWindow.postMessage(message, targetOrigin);
+				});
+			});
+		}
+
+		// Return either the newly created or stored promise.
+		return lfHandles[elementID].promise;
+	}
+
+	this.sendRestMessage = function(endPoint, message) {
+		return new Promise(function(resolve) {
+			var data = {
+	    		type: 'nnl.restmessage',
+	    		endPoint: endPoint,
+				message: message
+		    }
+
+			// Create a message channel to receive the response through it.
+			var channel = new MessageChannel();
+			// Listen for response on this end of the channel.
+			channel.port1.onmessage = function(event) {
+				resolve(event.data);
+			}
+
+		    nnlIframeLoaded.then(function() {
+				var targetOrigin = NNLUtils.getOrigin(endPoint);
+				// Transfer the other end of the channel to iframe.
+				nnlIframe.contentWindow.postMessage(data, targetOrigin, [channel.port2]);
+			});
+		});
+	}
+
+	this.getOrigin = function(url) {
+		if(url === undefined || url === null) {
+			return "*";
+		}
+
+		var parts = url.split("/");
+		return parts[0] + "//" + parts[2];
+	}
+
+	/**
+	 *	This method returns location extension object in following format: 
+							{
+								"id" : "noknok.uaf.location",
+								"data" : "<location_params>",
+								"fail_if_unknown" : false 
+							}
+		@param opType extension operation type
+		@param extensions requested extensions list
+	 */
+	this.createLocationExtension = function(opType, extensions) {
+		var sendExtension = false;
+ 
+		// Get extension mode value for given opType from AppSdkConfig config object
+		switch(AppSdkConfig.sendLocation[opType]) {
+			case ExtensionMode.NEVER:
+			   // never send extension
+			 	break;
+			case ExtensionMode.REQUESTED:
+				// send extension only if it is included in extensions list (exists in server response)
+				sendExtension = extensions && extensions.reduce(function(acc, ext) {return ext.id === "noknok.uaf.location"}, false);
+				break;
+			case ExtensionMode.ALWAYS:
+			 	// always send extension 
+				sendExtension = true;
+				break;
+			default:
+				break;
+		}
+
+		if (sendExtension) {
+			// get location params from local storage if available return location extension.
+			const locationParams = NNLStorage.getItem("locationParams");
+			// update local storage
+			getAndUpdateLocationParams();
+
+			if(locationParams) {
+				return Promise.resolve({
+					"id" : "noknok.uaf.location",
+					"data" : locationParams,
+					"fail_if_unknown" : false
+				});
+			}
+		}
+		return Promise.reject();
+	};
+
+	this.createMetricsExtension = function(opType, extensions) {
+		var sendExtension = false;
+
+		// Get extension mode value for given opType from AppSdkConfig config object
+		switch(AppSdkConfig.sendMetrics[opType]) {
+			case ExtensionMode.NEVER:
+				// never send extension
+				break;
+			case ExtensionMode.ALWAYS:
+				// always send extension
+				sendExtension = true;
+				break;
+			default:
+				break;
+		}
+
+		if (sendExtension) {
+			// get the metrics in Base64 encoded format.
+			const metrics = Tabulator.getInstance().getBase64Report();
+			if(metrics) {
+				return Promise.resolve({
+					"id" : "noknok.metrics",
+					"data" : metrics,
+					"fail_if_unknown" : false
+				});
+			}
+		}
+		return Promise.reject();
+	};
+
+	/**
+	 * Creates a deep clone of the specified object.
+	 */
+	this.cloneObject = function(obj) {
+		// If ES6 cloning method is available, use it.
+		if(typeof Object.assign !== 'undefined') {
+			return Object.assign({}, obj);
+		}
+
+		// Otherwise use json conversion method.
+		return JSON.parse(JSON.stringify(obj || {}));
+	}
+
+	this.getInitMessage = function(opType, extras, supportedProtocols) {
+		var rpData = {};
+		// Copy available data from extras
+		if(extras != null) {
+			// If this is a web OOB operation, copy the OOB data.
+			if(extras.webOob) {
+				rpData.oobData = extras.oobData;
+			}
+
+			// If application has specified support for QR code scanning, copy that flag.
+			if(extras.qrSupported != null) {
+				rpData.qrSupported = extras.qrSupported;
+			}
+		}
+
+		return nnl.FIDOClient.init(rpData, opType, supportedProtocols);
+	}
+
+	// Creates OperationData structure based on the operation result.
+	this.createOperationData = function(result, userName) {
+		var operationData = {};
+		operationData.additionalInfo = NNLUtils.cloneObject(result.additionalInfo);
+
+		// Extract the protocol from authenticator handle.
+		if(operationData.additionalInfo.authenticatorsResult != null && operationData.additionalInfo.authenticatorsResult.length > 0) {
+			var handle = operationData.additionalInfo.authenticatorsResult[0].handle;
+			handle = atob(handle.replace(/-/g, '+').replace(/_/g, '/'));
+			handle = JSON.parse(handle);
+			// Strip version from protocol family.
+			operationData.protocolFamily = handle[0].split('_')[0];
+		}
+
+		if(result.push != null) {
+			operationData.additionalInfo.push = result.push;
+		}
+
+		if(userName != null) {
+			operationData.userName = userName;
+		}
+
+		return operationData;
+	}
+
+	/**
+	 *  This method gets location params using Geolocation API and updates local storage
+	 */
+	var getAndUpdateLocationParams = function() {
+
+		if(!navigator.geolocation) {
+			NNLStorage.setItem('locationParams', JSON.stringify({status:LocationStatus.SENSOR_UNAVAILABLE}));
+			return;
+		}
+
+		navigator.geolocation.getCurrentPosition (
+			function(position) {
+				NNLStorage.setItem('locationParams', JSON.stringify({
+					status : LocationStatus.OK,
+					longitude : position.coords.longitude,
+					latitude : position.coords.latitude,
+					accuracy : position.coords.accuracy
+				}));
+			},
+			function(err) {
+				console.log("ERROR: ", err.code, err.message);
+				var statusCode = {
+					// map browser geolocation API error codes to AppSDK codes
+					1: LocationStatus.NO_APP_PERMISSION,
+					2: LocationStatus.SIGNAL_UNAVAILABLE,
+					3: LocationStatus.SIGNAL_UNAVAILABLE
+				}[err.code] || LocationStatus.UNKNOWN;
+
+				NNLStorage.setItem('locationParams', JSON.stringify({status : statusCode}));
+			},
+			{timeout:5000}
+		);
+	}
+	
+	/**
+	 *	Defines the location fetching status codes
+	 */
+	var LocationStatus = {
+			OK : 0,
+			UNKNOWN : 1,
+			SENSOR_UNAVAILABLE : 2,
+			SERVICES_NOT_INSTALLED : 3,
+			SIGNAL_UNAVAILABLE : 4,
+			NO_APP_PERMISSION : 5
+	}
+})();
+
+/**
+ * Controls how extensions are processed.
+ * @property {string} NEVER never produce the extension
+ * @property {string} ALWAYS always produce the extension
+ * @property {string} REQUESTED produce the extension if requested by the server.
+ */
+const ExtensionMode = {
+		NEVER: "never",
+		ALWAYS: "always",
+		REQUESTED: "requested"
+}
+
+/**
+ *  Defines operation type where the extensions should be included
+ * @property {string} INIT include extension in INIT requests payload
+ * @property {string} FINISH include extension in FINISH requests payload
+ * @property {string} PROTOCOL include in protocol messade
+ */
+
+const ExtensionOpType = {
+		INIT : "init",
+		FINISH : "finish",
+		PROTOCOL : "protocol"
+}
+
+/**
+ *
+ * This object defines AppSDK default configuration.
+ *
+ * @property {Object} sendLocation Controls the generation of the location extension
+ * @property {ExtensionMode} sendLocation.init to generate in init request payload
+ * @property {ExtensionMode} sendLocation.finish to generate in finish request payload
+ * @property {ExtensionMode} sendLocation.protocol to generate in protocol message
+ * @property {Object} sendMetrics Controls the generation of the metrics extension
+ * @property {ExtensionMode} sendMetrics.init to generate in init request payload
+ * @property {ExtensionMode} sendMetrics.finish to generate in finish request payload
+ * @property {ExtensionMode} sendMetrics.protocol to generate in protocol message
+ * @property {number} oob.pollingInterval Polling interval for OOB operation in milliseconds
+ * @property {number} adaptiveTimeout Adaptive operation timeout in seconds
+ * @property {Object} metricConfig Configures the metrics unit and range for historical data in JS App SDK calls
+ * @property {number} metricConfig.range The total count of metrics to be stored
+ * @property {MetricTimeUnit} metricConfig.unit The data capacity to be stored in each metric
+ * @property {number} maxNumberOfCachedUsers The max number of users to cache the data in cookies 
+ */
+var AppSdkConfig = {
+
+	sendLocation: {
+		init: ExtensionMode.NEVER,
+		finish: ExtensionMode.REQUESTED,
+		protocol: ExtensionMode.NEVER
+	},
+	
+	sendMetrics: {
+		init: ExtensionMode.NEVER,
+		finish: ExtensionMode.ALWAYS,
+		protocol: ExtensionMode.NEVER
+	},
+	
+	oob: {
+		regBaseUrl: "",
+		authBaseUrl: "",
+		pollingInterval: 1000
+	},
+
+	adaptiveTimeout: 70,
+
+	metricConfig: {
+		range: 2,
+		unit: 'DAY'
+	},
+
+	maxNumberOfCachedUsers: 3
+}
+
+/**
+ * @hideconstructor
+ * @class
+ * Allows to specify retrieve various AppSdk related properties.
+ * <br/>Supported properties are:
+ * 
+ * Property       | Description
+ * -------------- | -----------
+ * AppName        | A unique name identifying the web application.
+ * AppDisplayName | User friendly application name.
+ * DeviceID       | Device ID associated with the Browser.
+ * SdkVersion     | NNL SDK version. Read only.
+ */
+var AppSdkInfo = new (function() {
+	var appName = window.location.origin;
+	var appDisplayName = window.location.origin;
+
+	/**
+	 * Returns the version of App SDK.
+	 * @return {string} NNL SDK version.
+	 * @method AppSdkInfo.getSdkVersion
+	 * @static
+	 */
+	this.getSdkVersion = function() {
+		return '8.0.0.302';
+	}
+
+	/**
+	 * Sets custom application name.
+	 * Note: The custom application name provided by the Web App is unique across all AppSdk instances
+	 * and does not persist when page is closed or reloaded.
+	 * @param {string} customAppName - The custom application name.
+	 * @method AppSdkInfo.setAppName
+	 * @static
+	 */
+	this.setAppName = function(customAppName) {
+		appName = customAppName;
+	}
+
+	/**
+	 * Sets custom application display name.
+	 * Note: The custom application display name provided by the Web App is unique across all AppSdk instances
+	 * and does not persist when page is closed or reloaded.
+	 * @param {string} customAppDisplayName - The custom application display name.
+	 * @method AppSdkInfo.setAppDisplayName
+	 * @static
+	 */
+	this.setAppDisplayName = function(customAppDisplayName) {
+		appDisplayName = customAppDisplayName;
+	}
+	
+	/**
+	 * Sets the custom deviceId to be used instead of the default one.
+	 * Note: The custom deviceId provided by the Web App is unique across all AppSdk instances
+	 * and does not persist when page is closed or reloaded.
+	 * @param {string} deviceId Custom deviceId which uniquely identifies the device.
+	 * @method AppSdkInfo.setDeviceId
+	 * @static
+	 */
+	this.setDeviceId = function(deviceId) {
+		return nnl.FIDOClient.setDeviceId(deviceId);
+	}
+
+	/**
+	 * Retrieves the stored application name.
+	 * Either default, or custom application name (if set by [setAppName]{@link AppSdkInfo.setAppName}) is returned.
+	 * @returns {string} application name.
+	 * @method AppSdkInfo.getAppName
+	 * @static
+	 */
+	this.getAppName = function() {
+		return appName;
+	}
+
+	/**
+	 * Retrieves the stored application display name.
+	 * Either default, or custom application display name (if set by [setAppDisplayName]{@link AppSdkInfo.setAppDisplayName}) is returned.
+	 * @returns {string} application display name.
+	 * @method AppSdkInfo.getAppDisplayName
+	 * @static
+	 */
+	this.getAppDisplayName = function() {
+		return appDisplayName;
+	}
+	
+	/**
+	 * Returns the Device ID associated with the Browser.
+	 * Either default, or custom Device ID (if set by [setDeviceId]{@link AppSdkInfo.setDeviceId}) is returned.
+	 * @returns {Promise} A Promise that will be resolved with the device ID associated with the Browser.
+	 * @method AppSdkInfo.getDeviceId
+	 * @static
+	 */
+	this.getDeviceId = function() {
+		return nnl.FIDOClient.getDeviceId();
+	}
+})();
+
+/**
+ * Defines method for changing progress indicator visibility.
+ * @interface IndicatorListener
+ */
+
+/**
+ * Called when progress indicator visibility needs to be changed.
+ * @method IndicatorListener#changeIndicatorVisibility
+ * @param {boolean} show - Flag indicating whether progress indicator should be visible or not.
+ */
+
+
+/**
+ * @hideconstructor
+ * @class
+ * Singleton for controlling progress indicator.
+ */
+var ProgressIndicator = (function() {
+	var instance = null;
+
+	// Default implementation of IndicatorListener
+	var NNLIndicatorListener = function() {
+		this.changeIndicatorVisibility = function(show) {
+			var progress = document.getElementById('nnl-progress-wrapper');
+			if(progress) {
+				progress.style.display = (show ? 'block' : 'none');
+			}
+		}
+	}
+
+	function ProgressIndicatorImpl() {
+		var counter = 0;
+		var suspended = false;
+		var listener = new NNLIndicatorListener();
+
+		/**
+		 * Increments the progress indicator count.
+		 * Shows the progress indicator if the counter was 0 and indicator is not suspended.
+		 * @method ProgressIndicator#incCounter
+		 */
+		this.incCounter = function() {
+			if(++counter === 1 && !suspended) {
+				listener.changeIndicatorVisibility(true);
+			}
+		}
+
+		/**
+		 * Decrements the progress indicator count.
+		 * Hides the progress indicator if the counter reaches 0 and indicator is not suspended.
+		 * @method ProgressIndicator#decCounter
+		 */
+		this.decCounter = function() {
+			if(counter === 0) {
+				console.warn('Attempt to decrement ProgressIndicator counter when it is 0.');
+				return;
+			}
+
+			if(--counter === 0 && !suspended) {
+				listener.changeIndicatorVisibility(false);
+			}
+		}
+
+		/**
+		 * Suspends the progress indicator and hides it if it is visible.
+		 * @method ProgressIndicator#suspend
+		 */
+		this.suspend = function() {
+			if(suspended) {
+				console.warn('Attempt to suspend already suspended ProgressIndicator.');
+				return;
+			}
+
+			suspended = true;
+			if(counter > 0) {
+				listener.changeIndicatorVisibility(false);
+			}
+		}
+
+		/**
+		 * Restores the progress indicator from suspended state and shows it if it was visible before.
+		 * @method ProgressIndicator#resume
+		 */
+		this.resume = function() {
+			if(!suspended) {
+				console.warn('Attempt to resume non suspended ProgressIndicator.');
+				return;
+			}
+
+			suspended = false;
+			if(counter > 0) {
+				listener.changeIndicatorVisibility(true);
+			}
+
+		}
+
+		/**
+		 * Sets a new listener for progress indicator.
+		 * @returns {IndicatorListener} Previous listener.
+		 * @method ProgressIndicator#setListener
+		 */
+		this.setListener = function(newListener) {
+			var oldListener = listener;
+			listener = newListener;
+			return oldListener;
+		}
+	}
+
+	return {
+		/**
+		 * Returns ProgressIndicator instance.
+		 * @returns {ProgressIndicator} The single ProgressIndicator instance.
+		 * @memberof ProgressIndicator
+		 */
+		getInstance: function() {
+			if(instance === null) {
+				instance = new ProgressIndicatorImpl();
+			}
+
+			return instance;
+		}
+	}
+})();
+
+//Singleton for displaying short toast message.
+var NNLToastMessage = {
+	show: function(message) {
+		var toast = document.querySelector('#nnl-toast');
+		toast.innerText = message;
+		toast.style.display = 'block';
+		setTimeout(function() {
+			toast.style.display = 'none';
+		}, 3000);
+	}
+}
+
+/**
+ * @hideconstructor
+ * @class
+ * Static class that provides methods for storing and retreiving data.
+ * Data is stored in browser's local storage and can be backed up in cookies.
+ */
+var NNLStorage = new (function() {
+	var mEndpoint = null;
+	const COOKIE_FLAG = 'nnl.cookieSet.';
+
+	/**
+	 * Initializes the storage with the REST API endpoint that will allow to store and retrieve data in cookies.
+	 * When called, the method will retreive existing data from cookies and update the local storage.
+	 * @param {string} endpoint The cookie storage REST API endpoint.
+	 * @returns {Promise} Promise that will be resolved when data is successfully transferred from cookies to local storage.
+	 * @memberof NNLStorage
+	 * @alias NNLStorage.initialize
+	 */
+    this.initialize = function(endpoint) {
+		mEndpoint = endpoint;
+		var message = {
+			operation: 'GET'
+		}
+
+		return NNLUtils.sendRestMessage(mEndpoint, message)
+		.then(function(response) {
+			if(response.outcome === Outcome.SUCCESS) {
+				for(var name in response.data) {
+					localStorage.setItem(name, response.data[name]);
+				}
+			}
+		});
+	};
+
+	/**
+	 * Returns a stored item.
+	 * @param {string} name Name of the item to get.
+	 * @returns {string} The stored item.
+	 * @memberof NNLStorage
+	 * @alias NNLStorage.getItem
+	 */
+    this.getItem = function(name) {
+		var value = localStorage.getItem(name);
+		if(mEndpoint != null && value != null && localStorage.getItem(COOKIE_FLAG + name) == null) {
+			this.setItem(name, value);
+		}
+
+		return value;
+	};
+
+	/**
+	 * Stores the specified item.
+	 * @param {string} name Name of the item to store.
+	 * @param {string} value Value to store.
+	 * @memberof NNLStorage
+	 * @alias NNLStorage.setItem
+	 */
+    this.setItem = function(name, value) {
+		localStorage.setItem(name, value);
+		if(mEndpoint != null) {
+			var message = {
+				operation: 'SET',
+				name: name,
+				value: value
+			}
+
+			NNLUtils.sendRestMessage(mEndpoint, message)
+			.then(function(response) {
+				if(response.outcome === Outcome.SUCCESS) {
+					localStorage.setItem(COOKIE_FLAG + name, true);
+				}
+			});
+		}
+	};
+
+	/**
+	 * Deletes a stored item.
+	 * @param {string} name Name of the item to delete.
+	 * @memberof NNLStorage
+	 * @alias NNLStorage.removeItem
+	 */
+    this.removeItem = function(name) {
+		localStorage.removeItem(name);
+		if(mEndpoint != null) {
+			var message = {
+				operation: 'DELETE',
+				name: name
+			}
+
+			NNLUtils.sendRestMessage(mEndpoint, message)
+			.then(function(response) {
+				if(response.outcome === Outcome.SUCCESS) {
+					localStorage.removeItem(COOKIE_FLAG + name);
+				}
+			});
+		}
+	};
+})();

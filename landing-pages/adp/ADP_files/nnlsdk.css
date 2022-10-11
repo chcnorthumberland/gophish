@@ -1,0 +1,466 @@
+@charset "utf-8";
+
+/* Popup dialog styles */
+.nnl-dialog-wrapper {
+	display: none;
+	overflow: hidden;
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1150;
+}
+
+.nnl-dialog {
+    position: relative;
+    width: auto;
+    max-width: 600px;
+    margin: 200px auto auto;
+    z-index: 1150;
+    background: white;
+    border-radius: 10px;
+}
+
+.nnl-dialog-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	padding: 10px 20px;
+	border-bottom: 1px solid #a0a0a0;
+}
+
+.nnl-dialog-header .nnl-dialog-close {
+	float: right;
+	cursor: pointer;
+	font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #000;
+    text-shadow: 0 1px 0 #fff;
+    opacity: .5;
+    margin-left: auto;
+}
+
+.nnl-dialog-header .nnl-dialog-close:hover {
+	opacity: .75;
+}
+
+.nnl-dialog-body {
+	text-align: center;
+	padding: 20px;
+}
+
+.nnl-dialog-footer {
+	display: flex;
+	justify-content: flex-end;
+	align-items: baseline;
+	flex-wrap: wrap;
+	padding: 10px 20px;
+	border-top: 1px solid #a0a0a0;
+}
+
+.nnl-dialog-body input,
+.nnl-dialog-body select {
+	display: block;
+    padding: 5px 10px;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    margin: 10px auto;
+}
+
+.nnl-dialog-button {
+    display: block;
+    cursor: pointer;
+    padding: 5px 15px;
+    margin: 15px auto 5px;
+	font-size: 1rem;
+    border: 1px solid #C1403F;
+    border-radius: 5px;
+    background-image: linear-gradient(to bottom,#C1403F 0,#C1403F 100%);
+    background-color: #C1403F;
+    background-repeat: no-repeat;
+    color: #fff;
+    box-shadow: none;
+}
+
+.nnl-dialog-footer .nnl-dialog-button {
+	margin: 0px 0px 0px 5px;
+}
+
+.nnl-dialog-shadow {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1140;
+    width: 100vw;
+    height: 100vh;
+    background-color: #000;
+    opacity: .5;
+}
+
+.nnl-method-selection-list {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+@media (max-width: 576px), (max-height: 665px) {
+	.nnl-dialog {
+	    margin-top: 50px;
+	}
+}
+
+/* Progress animation */
+#nnl-progress-wrapper {
+	display: none;
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	z-index: 1130;
+}
+
+#nnl-progress-background {
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 1120;
+	width: 100vw;
+	height: 100vh;
+}
+
+#nnl-progress {
+	display: flex;
+	position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0, 0.7);
+    padding: 10px;
+    border-radius: 4px;
+    z-index: 1130;
+    align-items: center;
+    justify-content: center;
+}
+
+#nnl-progress .nnl-progress-animation {
+    border: 4px solid transparent;
+    border-top-color: white;
+    border-bottom-color: white;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    -webkit-animation: nnl-progress-spin 2s linear infinite;
+    animation: nnl-progress-spin 2s linear infinite;
+}
+
+@-webkit-keyframes nnl-progress-spin {
+	0% { -webkit-transform: rotate(0deg); }
+	100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes nnl-progress-spin {
+	0% { transform: rotate(0deg); }
+	100% { transform: rotate(360deg); }
+}
+
+#nnl-progress .nnl-progress-text {
+    font-size: 16px;
+    color: white;
+    margin-left: 10px;
+}
+
+/* Toast message */
+#nnl-toast {
+	display: none;
+    position: fixed;
+    bottom: 200px;
+    text-align: center;
+    width: 50%;
+    left: 50%;
+    margin-left: -25%;
+    background: rgba(0,0,0, 0.7);
+    padding: 10px;
+    border-radius: 4px;
+    z-index: 1180;
+    color: white;
+}
+
+/* Custom styles for OTP UI */
+.nnl-otp-data-form {
+	max-width: 300px;
+	margin: 0px auto;
+}
+
+.nnl-otp-data-form input {
+	width: 100%;
+}
+
+.nnl-otp-code-form {
+	width: 160px;
+	margin: 0px auto;
+}
+
+.nnl-otp-code-form input {
+	width: 100%;
+}
+
+.nnl-otp-error {
+	text-align: center;
+	color: red;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.blinking{
+    color: white;
+    animation: blinkingText 5s 1;
+    }
+
+   @keyframes blinkingText{
+       0%{     color: red;    }
+       49%{    color: red; }
+       50%{    color: red; }
+       99%{    color:red;  }
+       100%{   color: transparent;    }
+   }
+
+
+
+/* Custom styles for OOB UI */
+#nnl-oob-device-info,
+#nnl-oob-expiry-text,
+#nnl-oob-operation-title {
+  font-size: 0.8em;
+  line-height: 1.3em;
+  margin: 0;
+}
+
+#nnl-oob-push-section,
+#nnl-oob-additional-info {
+  font-size: 0.8em;
+  line-height: 1.3em;
+  margin: 0 0 1em;
+}
+
+#nnl-oob-push-text {
+  font-size: 0.9em;
+  line-height: 1.3em;
+  margin: 0 0 1em;
+}
+
+#nnl-oob-qr-section {
+    margin: 0px -20px;
+}
+
+#nnl-oob-qr-section img {
+	max-width: 100%;
+	margin:auto;
+}
+
+#nnl-oob-scan-qr {
+	-webkit-appearance: button;
+	
+	/*common.css button*/
+	width: auto;
+    overflow: visible; 
+    
+    /*common.css button.nnl*/
+    cursor: pointer; 
+    
+    color: #fff;
+    vertical-align: middle;
+    padding: .2em 1em .3em;
+    border: 0;
+    -webkit-border-radius: .35em;
+    border-radius: .35em;
+    -moz-background-clip: padding;
+    -webkit-background-clip: padding-box;
+    background-clip: padding-box;
+    position: relative;
+    white-space: nowrap;
+    /*line-height: 1em;*/
+    background: #69a9ad;  
+    
+    /*common.css .fido-button.small*/
+    height: 2em;
+    min-width: 0;
+    margin: auto;
+    font: 200 1em 'Helvetica Neue', Helvetica, sans-serif;
+    line-height: 1em;
+}
+
+/* Registration UI */
+.nnl-method {
+	display: flex;
+	flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.nnl-method:not(:last-child) {
+	padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #a0a0a0;
+}
+
+.nnl-method-text {
+	flex-grow: 1;
+	text-align: left;
+	word-break: break-word;
+}
+
+.nnl-method-text img {
+	height: 36px;
+	margin-right: 10px;
+    filter: brightness(0);
+}
+
+.nnl-method-buttons {
+	display: flex;
+}
+
+.nnl-method-add,
+.nnl-method-delete {
+	width: 36px;
+	height: 36px;
+	background: url('nnl_buttons.png') no-repeat;
+	border: none;
+	margin-right: 5px;
+    cursor: pointer;
+}
+
+.nnl-method-add {
+	background-position: 0px 0px;
+}
+
+.nnl-method-delete {
+	background-position: -36px 0px;
+}
+
+.nnl-method-delete[disabled] {
+	background-position: -72px 0px;
+	pointer-events: none;
+}
+
+/* Toggle switch */
+.nnl-method-toggle {
+	position: relative;
+	width: 60px;
+	height: 36px;
+	margin: 0px;
+}
+
+.nnl-method-toggle input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+.nnl-method-toggle span {
+	border-radius: 36px;
+	position: absolute;
+	cursor: pointer;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #ccc;
+	-webkit-transition: .4s;
+	transition: .4s;
+}
+
+.nnl-method-toggle span:before {
+	position: absolute;
+	content: "";
+	height: 28px;
+	width: 28px;
+	left: 4px;
+	bottom: 4px;
+	border-radius: 50%;
+	background-color: white;
+	-webkit-transition: .4s;
+	transition: .4s;
+}
+
+.nnl-method-toggle input:checked + span {
+	background-color: #a9d05e;
+}
+
+.nnl-method-toggle input:focus + span {
+	box-shadow: 0 0 1px #a9d05e;
+}
+
+.nnl-method-toggle input:checked + span:before {
+	-webkit-transform: translateX(24px);
+	transform: translateX(24x);
+}
+
+/* Suggest registration UI */
+#nnl-suggest-register-ui .nnl-dialog-body {
+	text-align: left;
+}
+
+#nnl-never-suggest-register {
+	margin-right: 5px;
+}
+
+#nnl-suggest-register-ui label[for="nnl-never-suggest-register"] {
+	font-size: 1rem;
+}
+
+#nnl-never-ask-wrapper {
+    flex-grow: 1;
+}
+
+a[disabled='disable']{
+    pointer-events: none;
+}
+
+
+.nnl-small-button {
+    padding: .15rem .4rem;
+    width: auto;
+    margin: 0 .5rem 0 0;
+    font-size: 14px;
+    line-height: 1rem;
+}
+
+.nnl-small-button:last-child {
+	margin: 0;
+}
+
+.nnl-registration-used-time {
+    font-size: 14px;
+}
+
+.nnl-registrations-description {
+    display: flex;
+    justify-content: space-between;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.nnl-reg-rename-input {
+    width: 22rem;
+}
+
+@media (max-width: 576px) {
+	.nnl-manage-reg-actions {
+		flex-direction: column;
+		justify-content: center;
+	}
+
+	.nnl-small-button {
+	    margin: 0 0 .5rem 0;
+	}
+}

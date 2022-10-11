@@ -1,0 +1,448 @@
+/**
+ * This interface defines a single method used for communication with the server.
+ * The App SDK has default implementation of RestClient RestClientDefault.
+ * For custom implementation define a RestClientCustom object that implements RestClient interface in 
+ * iframe-custom.js file which should be located in nnlappsdk Web App js directory (along with iframe-default.js).
+ * Then the App SDK will call RestClientCustom instead of RestClientDefault.
+ * @interface RestClient
+ */
+
+/**
+ * This callback should be called by rest client to provide Server response to the App SDK.
+ * @callback RestClient#responseCallback
+ * @param {object} response the response from the Server
+ * @param {object} restParams other parameters needed by rest client
+ * @param {Outcome} outcome a result code returned after processing a REST request.
+ */
+
+/**
+ * This method will be called by App SDK to send the request to the Server and return the response to the App SDK.
+ * @method RestClient#sendRequest
+ * @param {object} request the request which will be sent to the Server
+ * @param {object} restParams other parameters needed by rest client
+ * @param {RestClient#responseCallback} responseCallback a callback to be called with the response from the Server.
+ */
+
+/**
+ * @classdesc Implements a default RestClient interface.
+ * @class
+ * @implements RestClient
+ */
+var RestClientCustom = function() {
+		
+	/**
+	 * Sends REST request to the Server and returns the response to the App SDK.
+	 * @param {object} request the request which will be sent to the Server.
+	 * @param {object} restParams other parameters needed by rest client
+	 * @param {RestClient#responseCallback} responseCallback a callback to be called with the response from the Server.
+	 */
+	this.sendRequest = function(requestJson, restParams, responseCallback) {
+	  var restUrl = Utils.isObject(restParams.sessionData) && restParams.sessionData.serviceUrl;
+	  const SIGNIN_CONTEXT = 'api/sign-in-service';
+	  if(restUrl != undefined && restUrl.indexOf(SIGNIN_CONTEXT) !== -1) {
+
+
+            console.log('In Custom iframe  ---------------------------', restUrl);
+            //console.log('In Custom iframe  ---------------------------', restParams.url);
+            // Set sessionData
+            if(requestJson.operation !== 'LIST_REG' && (requestJson.operation === 'INIT_REG' || requestJson.operation === 'FINISH_REG')) {
+                requestJson = populateSigninRegisterRequest(requestJson, restParams);
+            }
+            else if(restParams.sessionData.requestType === 'USER_IDENTIFY' && requestJson.operation === 'INIT_AUTH'){
+                requestJson = populateSigninAuthIdentifyRequest(requestJson, restParams);
+            }
+            else if(requestJson.operation === 'INIT_AUTH' || requestJson.operation === 'FINISH_AUTH' ){
+                restUrl = restParams.sessionData.nextUrl;
+                requestJson = populateSigninAuthRequest(requestJson, restParams);
+            }
+            else  {
+                // Set sessionData
+                if (Utils.isSessionPresent(restParams.sessionData)) {
+                    requestJson.sessionData = restParams.sessionData;
+                }
+                // Set options from extras
+                if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+                    requestJson.optionsData = restParams.extras.options;
+                }
+                // Set contextData from extras
+                if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+                    requestJson.contextData = restParams.extras.contextData;
+                }
+                // Set ruleSetName from extras
+                if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+                    requestJson.ruleSetName = restParams.extras.ruleSetName;
+                }
+                if(restParams.callerOrigin !== undefined){
+                    requestJson.callerOrigin = restParams.callerOrigin;
+                }
+
+                if (restParams.id) {
+                    requestJson.id = restParams.id;
+                } else {
+                    requestJson.id = Utils.createUUID();
+                }
+            }
+            var headerData = restParams.sessionData.headers;
+            var as = {
+                    url: 			restUrl,
+                    method: 		"POST",
+                    dataType: 		"json",
+                    headers: 		headerData,
+                    crossDomain: 	true,
+                    xhrFields: 		{withCredentials: true},
+                    timeout: 		10000,
+                    cache: 			false
+            };
+            if (restParams.dataType) {
+                as.dataType = restParams.dataType;
+            }
+            as.data = JSON.stringify(requestJson);
+
+            // Callback function to be called if the request succeeds.
+            as.success = function(response, textStatus, jqXHR) {
+                var restStatus = getRestStatusForSignIn(jqXHR);
+                restParams.sessionData.signInSession = restStatus.session;
+                restParams.sessionData.accessToken = restStatus.accessToken;
+                restParams.sessionData.nextUrl = restStatus.nextUrl;
+                /*if(response.result.type === 'FIDO_REGISTRATION_RESULT') {
+                    restParams.sessionData.fidoAuthenticatorToken = restParams.sessionData.sessionKey;
+                }*/
+                responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+            }
+
+            // Callback function to be called if the request fails.
+            //
+            as.error = function(jqXHR, textStatus, errorThrown) {
+                var restStatus = getRestStatusForSignIn(jqXHR);
+                responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+            }
+            jQuery.ajax(as);
+        }
+        else {
+
+            var as = {
+                    url: 			restParams.url,
+                    method: 		"POST",
+                    dataType: 		"json",
+                    headers: 		{"Content-Type": "application/json; charset=UTF-8"},
+                    crossDomain: 	true,
+                    xhrFields: 		{withCredentials: true},
+                    timeout: 		10000,
+                    cache: 			false
+                };
+            // Set sessionData
+            if (Utils.isSessionPresent(restParams.sessionData)) {
+                requestJson.sessionData = restParams.sessionData;
+            }
+            // Set options from extras
+            if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+                requestJson.optionsData = restParams.extras.options;
+            }
+            // Set contextData from extras
+            if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+                requestJson.contextData = restParams.extras.contextData;
+            }
+            // Set ruleSetName from extras
+            if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+                requestJson.ruleSetName = restParams.extras.ruleSetName;
+            }
+            if(restParams.callerOrigin !== undefined){
+                requestJson.callerOrigin = restParams.callerOrigin;
+            }
+
+            if (restParams.id) {
+                requestJson.id = restParams.id;
+            } else {
+                requestJson.id = Utils.createUUID();
+            }
+
+            if (restParams.dataType) {
+                as.dataType = restParams.dataType;
+            }
+            as.data = JSON.stringify(requestJson);
+
+            // Callback function to be called if the request succeeds.
+            as.success = function(response, textStatus, jqXHR) {
+                var restStatus = getRestStatus(jqXHR);
+                responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+            }
+
+            // Callback function to be called if the request fails.
+            //
+            as.error = function(jqXHR, textStatus, errorThrown) {
+                var restStatus = getRestStatus(jqXHR);
+                responseCallback(restStatus.responseJson, restParams, restStatus.restStatus);
+            }
+            jQuery.ajax(as);
+        }
+	}
+	
+	/*
+	 * Returns rest status and response body for sign-in-service if available
+	 * Possible values are Outcome.SUCCESS, Outcome.INVALID_SESSION and Outcome.SERVER_ERROR
+	 * @private
+	 */
+	function getRestStatusForSignIn(jqXHR) {
+    	var statusCode;
+        var responseJson;
+        var restStatus = {};
+        try {
+            responseJson = JSON.parse(jqXHR.responseText);
+            if (Utils.isObject(responseJson.challenge)) {
+                statusCode = (responseJson.challenge.fidoResponse.statusCode || responseJson.challenge.fidoResponse.error);
+            } else {
+                statusCode = (responseJson.result.fidoResponse.statusCode || responseJson.result.fidoResponse.error);
+            }
+        } catch (e) {
+            // if response is not a valid JSON, that means an server error has occurred.
+        	console.log('Invalid JSON response is returned from the server');
+        }
+
+        if(statusCode !== undefined) {
+        	restStatus.restStatus = Outcome.SUCCESS;
+        } else if(jqXHR.status !== undefined) {
+        	restStatus.restStatus =  Outcome.fromHttpStatusCode(jqXHR.status);
+        } else {
+        	restStatus.restStatus =  Outcome.SERVER_ERROR;
+        }
+
+        if (Utils.isObject(responseJson.result)) {
+            restStatus.responseJson = responseJson.result.fidoResponse;
+            restStatus.responseJson.accessToken = responseJson.result.accessToken;
+            restStatus.responseJson.redirectUrl = responseJson.result.redirectUrl;
+            if (Utils.isObject(responseJson.result.user)) {
+                restStatus.responseJson.givenName = responseJson.result.user.givenName;
+            }
+        } else if (Utils.isObject(responseJson.challenge)) {
+           restStatus.responseJson = responseJson.challenge.fidoResponse;
+           restStatus.nextUrl = responseJson.challenge.next;
+        }
+
+        restStatus.session = responseJson.session;
+
+        return restStatus;
+
+    }
+
+    /*
+     * Returns rest status and response body if available
+     * Possible values are Outcome.SUCCESS, Outcome.INVALID_SESSION and Outcome.SERVER_ERROR
+     * @private
+     */
+    function getRestStatus(jqXHR) {
+        var statusCode;
+        var responseJson;
+        var restStatus = {};
+        try {
+            responseJson = JSON.parse(jqXHR.responseText);
+            statusCode = (responseJson.statusCode || responseJson.error);
+        } catch (e) {
+            // if response is not a valid JSON, that means an server error has occurred.
+            console.log('Invalid JSON response is returned from the server');
+        }
+
+        if(statusCode !== undefined) {
+            restStatus.restStatus = Outcome.SUCCESS;
+        } else if(jqXHR.status !== undefined) {
+            restStatus.restStatus =  Outcome.fromHttpStatusCode(jqXHR.status);
+        } else {
+            restStatus.restStatus =  Outcome.SERVER_ERROR;
+        }
+        restStatus.responseJson = responseJson;
+        return restStatus;
+
+    }
+
+    /*
+     * Returns requestJson in sign-in-service compatible registration format
+     * @private
+     */
+    function populateSigninRegisterRequest(requestJson, restParams) {
+        var signInRequestJson = {
+            response: {
+                type: "FIDO_REGISTRATION_RESPONSE",
+                fidoRequest: {
+                    id: requestJson.id,
+                    message: requestJson.message,
+                    operation: requestJson.operation,
+                    optionsData: requestJson.optionsData,
+                    sessionData: {}
+                }
+             },
+            session: 'testSession'
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.signInSession != undefined) {
+            signInRequestJson.session = restParams.sessionData.signInSession;
+        }
+        /*if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.sessionKey != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.sessionKey = restParams.sessionData.sessionKey;
+        }*/
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.exp != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.exp = restParams.sessionData.exp;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.userName != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.userName = restParams.sessionData.userName;
+        }
+
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.fidoAuthenticatorToken != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.sessionKey = restParams.sessionData.fidoAuthenticatorToken;
+        }
+        // Set options from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+            signInRequestJson.response.fidoRequest.optionsData = restParams.extras.options;
+        }
+        // Set contextData from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+            signInRequestJson.response.fidoRequest.contextData = restParams.extras.contextData;
+        }
+        // Set ruleSetName from extras
+        if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+            signInRequestJson.response.fidoRequest.ruleSetName = restParams.extras.ruleSetName;
+        }
+        if(restParams.callerOrigin !== undefined){
+            signInRequestJson.response.fidoRequest.callerOrigin = restParams.callerOrigin;
+        }
+
+        if (restParams.id) {
+            signInRequestJson.response.fidoRequest.id = restParams.id;
+        } else {
+            signInRequestJson.response.fidoRequest.id = Utils.createUUID();
+        }
+        return signInRequestJson;
+
+    }
+
+    /*
+     * Returns requestJson in sign-in-service compatible init auth format
+     * @private
+     */
+    function populateSigninAuthIdentifyRequest(requestJson, restParams) {
+        var signInRequestJson = {
+            identifier: restParams.sessionData.userName,
+            fidoRequest: {
+                id: requestJson.id,
+                message: requestJson.message,
+                operation: requestJson.operation,
+                optionsData: requestJson.optionsData,
+                sessionData: {}
+            },
+            session: ''
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.signInSession != undefined) {
+            signInRequestJson.session = restParams.sessionData.signInSession;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.sessionKey != undefined) {
+            signInRequestJson.fidoRequest.sessionData.sessionKey = restParams.sessionData.sessionKey;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.exp != undefined) {
+            signInRequestJson.fidoRequest.sessionData.exp = restParams.sessionData.exp;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.userName != undefined) {
+            signInRequestJson.fidoRequest.sessionData.userName = restParams.sessionData.userName;
+            signInRequestJson.identifier = restParams.sessionData.userName;
+        }
+        // Set options from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+            signInRequestJson.fidoRequest.optionsData = restParams.extras.options;
+        }
+        // Set contextData from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+            signInRequestJson.fidoRequest.contextData = restParams.extras.contextData;
+        }
+        // Set ruleSetName from extras
+        if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+            signInRequestJson.fidoRequest.ruleSetName = restParams.extras.ruleSetName;
+        }
+        if(restParams.callerOrigin !== undefined){
+            signInRequestJson.fidoRequest.callerOrigin = restParams.callerOrigin;
+        }
+
+        if (restParams.id) {
+            signInRequestJson.fidoRequest.id = restParams.id;
+        } else {
+            signInRequestJson.fidoRequest.id = Utils.createUUID();
+        }
+        return signInRequestJson;
+
+    }
+
+    /*
+     * Returns requestJson in sign-in-service compatible complete auth format
+     * @private
+     */
+    function populateSigninAuthRequest(requestJson, restParams) {
+        var signInRequestJson = {
+            response: {
+                type: "FIDO_AUTHENTICATION_RESPONSE",
+                fidoRequest: {
+                    id: requestJson.id,
+                    message: requestJson.message,
+                    operation: requestJson.operation,
+                    optionsData: requestJson.optionsData,
+                    sessionData: {}
+                }
+             },
+            session: 'testSession'
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.signInSession != undefined) {
+            signInRequestJson.session = restParams.sessionData.signInSession;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.sessionKey != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.sessionKey = restParams.sessionData.sessionKey;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.exp != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.exp = restParams.sessionData.exp;
+        }
+        if (Utils.isSessionPresent(restParams.sessionData) && restParams.sessionData.userName != undefined) {
+            signInRequestJson.response.fidoRequest.sessionData.userName = restParams.sessionData.userName;
+        }
+        // Set options from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.options)) {
+            signInRequestJson.response.fidoRequest.optionsData = restParams.extras.options;
+        }
+        // Set contextData from extras
+        if (Utils.isObject(restParams.extras) && Utils.isObject(restParams.extras.contextData)) {
+            signInRequestJson.response.fidoRequest.contextData = restParams.extras.contextData;
+        }
+        // Set ruleSetName from extras
+        if (Utils.isObject(restParams.extras) && restParams.extras.ruleSetName !== undefined) {
+            signInRequestJson.response.fidoRequest.ruleSetName = restParams.extras.ruleSetName;
+        }
+        if(restParams.callerOrigin !== undefined){
+            signInRequestJson.response.fidoRequest.callerOrigin = restParams.callerOrigin;
+        }
+
+        if (restParams.id) {
+            signInRequestJson.response.fidoRequest.id = restParams.id;
+        } else {
+            signInRequestJson.response.fidoRequest.id = Utils.createUUID();
+        }
+        return signInRequestJson;
+
+    }
+}
+/**
+ * Create and return a single instance of RestClient RestClientDefault or RestClientCustom
+ * @private
+ */
+var RestClientFactory = (function () {
+    var instance;
+
+    function createInstance() {
+    	if (typeof RestClientCustom !== 'undefined') {
+    		instance = new RestClientCustom();
+		} else {
+			instance = new RestClientDefault();
+		}
+        return instance;
+    }
+
+    return {
+        getInstance: function () {
+            if (!instance) {
+                instance = createInstance();
+            }
+            return instance;
+        }
+    };
+})();

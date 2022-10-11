@@ -1,0 +1,458 @@
+// Create global objects if needed.
+window.nnl = window.nnl || {};
+
+nnl.FIDOClient = new (function() {
+	var abortController = null;
+    var customDeviceId;
+
+	const ATTACHMENT_PLATFORM = 'platform';
+	const ATTACHMENT_CROSS_PLATFORM = 'cross-platform';
+
+	var fido2supported = (window.PublicKeyCredential != null);
+	var platformAuthenticatorAvailable = false;
+
+	if(fido2supported) {
+		// Call this when creating the FIDOClient instance as this call breaks user gesture on iOS
+		// so cannot be called during processing to pass the flag to the server.
+		PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+		.then(function(isAvailable) {
+			platformAuthenticatorAvailable = isAvailable
+		})
+		.catch(function(){});
+	}
+
+	this.init = function(rpData, operation, protocols) {
+		// Web client supports only FIDO2 protocol.
+		if(protocols && protocols.indexOf('fido2') === -1) {
+			return Promise.reject({outcome: Outcome.NOT_COMPATIBLE});
+		}
+
+		return new Promise(function(resolve) {
+			var message = getMessage(operation, rpData);
+			// Add platform authenticator support flag to device info for the server.
+			message.device.supportsPlatformAuthenticator = platformAuthenticatorAvailable;
+
+			if(rpData != null && rpData.oobData != null) {
+				message.oobData = rpData.oobData;
+			}
+
+			addLocationExtension(message, ExtensionOpType.INIT)
+			.then(function(message) {
+				resolve(b64enc(JSON.stringify(message)));
+			});
+		});
+	}
+
+	this.process = function(rpData, operation, protocol, serverMessage, extras) {
+		Tabulator.getInstance().startTimer(MetricName.CLIENT_PROCESS_TIME);
+		return processRequest(rpData, operation, protocol, serverMessage, extras).then(function (result) {
+			Tabulator.getInstance().updateMetricTime(MetricName.CLIENT_PROCESS_TIME);
+			return result;
+		}).catch(function (result) {
+			Tabulator.getInstance().endTimer(MetricName.CLIENT_PROCESS_TIME);
+			Tabulator.getInstance().updateMetric(MetricName.INVALID_CLIENT_PROCESS);
+			return Promise.reject(result);
+		});
+	}
+
+	function processRequest(rpData, operation, protocol, serverMessage, extras) {
+		// As web client does not support deregistration, just return success
+		// to complete the operation regardless of protocol.
+		if(operation === 'DEREG') {
+			return Promise.resolve();
+		}
+
+		// Web client supports only FIDO2 protocol.
+		if(protocol !== 'fido2') {
+			return Promise.reject({outcome: Outcome.NOT_COMPATIBLE});
+		}
+
+		// For CANCEL operation abort an ongoing operation and return.
+		if(operation === 'CANCEL') {
+			if(abortController) {
+				abortController.abort();
+			}
+			return Promise.resolve();
+		}
+
+		// For AUTH and REG operations, decode and parse the message.
+		var request = b64dec(serverMessage);
+		request = JSON.parse(request);
+		var webAuthnRequest = JSON.parse(request.protocolMessage);
+
+		if(webAuthnRequest === null || !webAuthnRequest.options ) {
+			return Promise.reject({outcome: Outcome.PROTOCOL_ERROR});
+        }
+
+		// Convert the request for WebAuthn APIs.
+		transformOptions(webAuthnRequest.options);
+
+		// If this is a check policy operation, return its result.
+		if(rpData != null && rpData.checkPolicy) {
+			return checkPolicy(webAuthnRequest.options);
+		}
+
+		// Extract authenticator filter if specified in extras.
+		var authenticatorFilter = {};
+		if(extras != null && extras.extensions != null) {
+			for(var i in extras.extensions) {
+				var extension = extras.extensions[i];
+				if(extension.id === 'noknok.webauthnAuthenticatorFilter') {
+					authenticatorFilter = JSON.parse(extension.data);
+				}
+			}
+		}
+
+		// Apply the filter.
+		var authenticatorSelection = webAuthnRequest.options.authenticatorSelection || {};
+		for(var prop in authenticatorFilter) {
+			if(authenticatorSelection[prop] == null) {
+				// If a property from a filter is not present in the policy, then copy it to the policy.
+				authenticatorSelection[prop] = authenticatorFilter[prop];
+			} else if(authenticatorSelection[prop] !== authenticatorFilter[prop]) {
+				// Otherwise it the property value from the filter does not match with value from policy, fail with NO_MATCH.
+				return Promise.reject({outcome: Outcome.NO_MATCH});
+			}
+		}
+
+		// Set the filtered options.
+		webAuthnRequest.options.authenticatorSelection = authenticatorSelection;
+
+		// If a custom user name is specified in extras during registration, override it in the options.
+		if(operation === 'REG' && extras != null && typeof extras.userName === 'string' && extras.userName !== '') {
+			webAuthnRequest.options.user.name = extras.userName;
+		}
+
+		console.log(operation + ' request: ', webAuthnRequest.options);
+
+		if(webAuthnRequest.options.extensions != null && webAuthnRequest.options.extensions.txAuthSimple) {
+			// call ITransactionUI.openUI implementation for displaying transaction UI
+			return TransactionUIFactory.getInstance().createTransactionUIInstance().openUI(webAuthnRequest.options.extensions.txAuthSimple, 'text/plain')
+			.then(function(outcome) {
+				if(outcome === Outcome.SUCCESS) {
+					return processWebAuthn(operation, request, webAuthnRequest, extras);
+				}
+          		return Promise.reject({outcome: outcome});
+			})
+		}
+		return processWebAuthn(operation, request, webAuthnRequest, extras);
+	}
+	
+	function processWebAuthn(operation, request, webAuthnRequest, extras) {
+		// Create proper object for WebAuthn APIs.
+		var options = {
+			publicKey: webAuthnRequest.options
+		}
+
+		// Add cancellation support.
+		abortController = null;
+		if(typeof AbortController !== 'undefined') {
+            abortController = new AbortController();
+            options.signal = abortController.signal;
+        }
+
+		// Get WebAuthn API method name based on operation.
+		var method = (operation === 'REG' ? 'create' : 'get');
+
+		return new Promise(function(resolve, reject) {
+			// Call the WebAuthn API method.
+			navigator.credentials[method](options)
+			.then(function(publicKeyCredential) {
+				if(publicKeyCredential !== null) {
+					console.log(operation + ' response: ', publicKeyCredential);
+
+					// Create and return response message.
+					var response = {
+						server: request.server,
+						serverData: webAuthnRequest.serverData,
+						publicKeyCredential: transformPublicKeyCredential(publicKeyCredential)
+					}
+
+					var message = getMessage(operation, extras);
+					message.protocolMessage = JSON.stringify(response);
+					message.server = request.server;
+
+					addLocationExtension(message, ExtensionOpType.FINISH)
+					.then(function (message) {
+						if (operation === 'REG') {
+							return message;
+						}
+						return addMetricsExtension(message, ExtensionOpType.FINISH);
+					})
+					.then(function(message) {
+						var responseData = {
+							message: b64enc(JSON.stringify(message)),
+							device: {
+								info: getOS()
+							}
+						}
+
+						if(operation === 'REG') {
+							responseData.isPlatformAuthenticator = true;
+
+							// Transports array will be set by transformPublicKeyCredential() call.
+							var transports = response.publicKeyCredential.response.transports;
+
+							// if getTransports() API returns non empty list that does not contain "internal"
+							// then a roaming authenticator was used.
+							if(transports != null && transports.length > 0 && transports.indexOf('internal') === -1) {
+								responseData.isPlatformAuthenticator = false;
+							}
+						}
+
+						resolve(responseData);
+					});
+				} else {
+					reject({outcome: Outcome.FAILURE});
+				}
+			})
+			.catch(function(error) {
+				console.log('navigator.credentials.' + method + ' api failed with error: ' + error);
+				reject({
+					outcome: Outcome.fromFIDO2Error(error.name),
+					exception: constructDOMException(error)
+				});
+			});
+		});
+	}
+
+    // Creates and returns a new UUID.
+    function createUUID() {
+        var dt = new Date().getTime();
+        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = (dt + Math.random() * 16) % 16 | 0;
+            dt = Math.floor(dt / 16);
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+        return uuid;
+    }
+
+    this.setDeviceId = function (deviceId) {
+        return new Promise(function (resolve) {
+            customDeviceId = deviceId;
+            resolve();
+        });
+    }
+
+	this.getDeviceId = function () {
+		return Promise.resolve(getDeviceId());
+	}
+
+	function checkPolicy(options) {
+		// Reject with NO_MATCH if the browser does not support FIDO2.
+		if(!fido2supported) {
+			return Promise.reject({outcome: Outcome.NO_MATCH});
+		}
+
+		var authenticatorAttachment = '';
+		if(options.authenticatorSelection != null) {
+			authenticatorAttachment = options.authenticatorSelection.authenticatorAttachment;
+		}
+
+		var availableAuthenticators = [];
+
+		if(platformAuthenticatorAvailable && authenticatorAttachment !== ATTACHMENT_CROSS_PLATFORM) {
+			availableAuthenticators.push({
+				description: 'Platform Authenticator',
+				isAllowed: true,
+				authenticatorAttachment: ATTACHMENT_PLATFORM
+			});
+		}
+
+		if(fido2supported && authenticatorAttachment !== ATTACHMENT_PLATFORM) {
+			availableAuthenticators.push({
+				description: 'Security Key',
+				isAllowed: true,
+				authenticatorAttachment: ATTACHMENT_CROSS_PLATFORM
+			});
+		}
+
+		return Promise.resolve({
+			additionalInfo: {
+				authenticators: availableAuthenticators
+			}
+		});
+	}
+
+	function getDeviceId() {
+		var DEVICE_ID_KEY = "device_id";
+		if (typeof customDeviceId === 'string') {
+			return customDeviceId;
+		} else {
+			var deviceId = NNLStorage.getItem(DEVICE_ID_KEY);
+			if (deviceId === null) {
+				deviceId = createUUID();
+				NNLStorage.setItem(DEVICE_ID_KEY, deviceId);
+			}
+			return deviceId;
+		}
+	}
+
+	function getMessage(operation, extras) {
+		var message = {
+			version: '1.0',
+			protocol: 'web_1.0',
+			sdk: {
+				version: AppSdkInfo.getSdkVersion(),
+				protocols: [{
+					protocolVersion: 'web_1.0'
+				}]
+			},
+			device: {
+				id: getDeviceId(),
+				type: 'browser',
+				info: navigator.userAgent
+			},
+			app: {
+				id: window.location.origin,
+				name: AppSdkInfo.getAppName(),
+				displayName: AppSdkInfo.getAppDisplayName()
+			}
+		}
+
+		// If qrSupported flag is specified by the app, use it.
+		if(extras.qrSupported != null) {
+			message.app.qrSupported = extras.qrSupported;
+		} else if(operation === 'REG') {
+			// Otherwise set default value for registration only
+			// to not send the flag for authentication as it will reset previously set value. 
+			message.app.qrSupported = false;
+		}
+
+		return message;
+	}
+
+	function addLocationExtension(message, extensionOpType) {
+
+		return NNLUtils.createLocationExtension(extensionOpType)
+		.then(function(locParams) {
+			message.extensions = [locParams];
+			return message;
+		})
+		.catch(function() {
+			return message;
+		});
+	}
+
+	function addMetricsExtension(message, extensionOpType) {
+		return NNLUtils.createMetricsExtension(extensionOpType).then(function(metricsParams) {
+			if (message.extensions == null) {
+				message.extensions = [metricsParams];
+			} else {
+				message.extensions.push(metricsParams);
+			}
+			return message;
+		}).catch(function () {
+			return message;
+		});
+	}
+
+	function arrayBufferTob64(data) {
+		return b64enc(String.fromCharCode.apply(null, new Uint8Array(data)));
+	}
+
+	function constructDOMException(error) {
+		return {
+			name: error.name,
+			code: error.code,
+			message:error.message
+		}
+	}
+
+	function transformOptions(options) {
+		options.challenge = b64ToArrayBuffer(options.challenge);
+
+		if(options.excludeCredentials) {
+			options.excludeCredentials = transformCredenialID(options.excludeCredentials);
+		}
+
+		if(options.allowCredentials) {
+			options.allowCredentials = transformCredenialID(options.allowCredentials);
+		}
+
+		if(options.user) {
+			options.user.id = b64ToArrayBuffer(options.user.id);
+		}
+	}
+
+	function transformPublicKeyCredential(publicKeyCredential) {
+	    var credential = {};
+	    credential.id = publicKeyCredential.id;
+
+	    credential.rawId = arrayBufferTob64(publicKeyCredential.rawId);
+	    credential.type = publicKeyCredential.type;
+
+	    credential.response = {};
+	    if(publicKeyCredential.response.attestationObject) {
+	    	credential.response.attestationObject = arrayBufferTob64(publicKeyCredential.response.attestationObject);
+	    }
+
+	    if(publicKeyCredential.response.authenticatorData) {
+	    	credential.response.authenticatorData = arrayBufferTob64(publicKeyCredential.response.authenticatorData);
+	    }
+
+	    if(publicKeyCredential.response.signature) {
+	    	credential.response.signature =  arrayBufferTob64(publicKeyCredential.response.signature);
+	    }
+
+	    if(publicKeyCredential.response.userHandle) {
+	    	credential.response.userHandle = arrayBufferTob64(publicKeyCredential.response.userHandle);
+	    }
+
+	    credential.response.clientDataJSON = arrayBufferTob64(publicKeyCredential.response.clientDataJSON);
+
+		if(typeof publicKeyCredential.response.getTransports === 'function') {
+			credential.response.transports = publicKeyCredential.response.getTransports();
+		}
+
+	    return credential;
+	}
+
+	function b64ToArrayBuffer (input) {
+		var decoded = b64dec(input);
+		var buffer = new Uint8Array(decoded.length);
+		for(var i = 0; i < decoded.length; ++i) {
+			buffer[i] = decoded.charCodeAt(i);
+		}
+
+		return buffer;
+	}
+
+	function b64dec(data) {
+		return atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+	}
+
+	function b64enc(data) {
+		return btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+	}
+
+	function transformCredenialID(credentialList) {
+	    if(!(credentialList instanceof Array)) return;
+
+	    for(var i = 0, size = credentialList.length; i < size ; i++){
+	        credentialList[i].id = b64ToArrayBuffer(credentialList[i].id);
+	    }
+	    return credentialList;
+	}
+
+	function getOS() {
+		var macosPlatforms = ['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'];
+		var windowsPlatforms = ['Win32', 'Win64', 'Windows', 'WinCE'];
+		var iosPlatforms = ['iPhone', 'iPad', 'iPod']
+
+		if(macosPlatforms.indexOf(window.navigator.platform) !== -1) {
+			return 'MacOS';
+		} else if(iosPlatforms.indexOf(window.navigator.platform) !== -1) {
+			return 'iOS';
+		} else if(windowsPlatforms.indexOf(window.navigator.platform) !== -1) {
+			return 'Windows';
+		} else if(/Android/.test(window.navigator.userAgent)) {
+			return 'Android';
+		} else if(/Linux/.test(window.navigator.platform)) {
+			return 'Linux';
+		}
+
+		return 'Unknown';
+	}
+})();
+

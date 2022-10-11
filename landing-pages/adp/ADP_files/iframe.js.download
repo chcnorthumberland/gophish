@@ -1,0 +1,148 @@
+/**
+ * iframe.js 
+ */
+var nnlPollTimer = null;
+
+// Start to listen messages from the SDK.
+window.addEventListener("message", receiveMessage, false);
+console.log('NNL Iframe is loaded, waiting for notification from the SDK.');
+function iframeReady() {
+	Utils.postMessage({type: "nnl.iframeReady"});
+
+	// Periodically send iframeReady message to the SDK.
+	nnlPollTimer = setTimeout(iframeReady, 1000);
+}
+
+function checkOrigin(origin)
+{
+	if (!window.location.origin){
+		window.location.origin = window.location.protocol + "//" 
+		    + window.location.hostname 
+		    + (window.location.port ? ':' + window.location.port : '');
+	}
+    
+	return origin !== window.location.origin;
+}
+
+function checkEndPoint(endPoint)
+{
+	if (window.endPointRegExp && endPoint)
+		return window.endPointRegExp.test(endPoint);
+	else
+		return true; // nothing to check	
+}
+
+function processMessage(clientType, event) 
+{
+	if("INIT" === event.data.op) {
+        Utils.postMessage({type: "nnl.iframeUxFReady"}, event);
+        return;
+    }
+
+    window.fidoClient[clientType].process(event);
+}
+
+function loadFile(data, event) {
+	// Response message.
+	var message = {
+		op: data.op,
+		elementID: data.elementID
+	}
+
+	$.get(data.url, function(content) {
+		message.content = content;
+		Utils.postMessage(message, event);
+	}) .fail(function() {
+		console.error('Unable to load resource: ' + data.url);
+		Utils.postMessage(message, event);
+	});
+}
+
+function sendRestMessage(data, event) {
+	var restClient = RestClientFactory.getInstance();
+	var restParams = {
+		url: data.endPoint
+	}
+
+	data.message.callerOrigin = event.origin;
+
+	restClient.sendRequest(data.message, restParams, function(responseJson, restParams, restStatus) {
+		var message = {
+			outcome: restStatus,
+			data: responseJson
+		}
+
+		// Send response through the message channel.
+		event.ports[0].postMessage(message);
+	});
+}
+
+function receiveMessage(event) {
+	
+	if (checkOrigin(event.origin)){
+		event.callerOrigin = event.origin;
+	}
+
+    var data = event.data;
+
+	if(!Utils.isObject(data)) {
+		console.error('Invalid data received: ' + data);
+		return;
+	}
+
+	// Stop sending the iframeReady message when it is accepted by the SDK.
+	if(data.type === 'nnl.ready') {
+		clearInterval(nnlPollTimer);
+		return;
+	}
+
+	if(data.type === 'nnl.restmessage') {
+		sendRestMessage(data, event);
+		return;
+	}
+
+	if (data.type === 'nnl.metric.channel.bind') {
+		TabulatorCommunication.bindChannel(event);
+		return;
+	}
+
+    if(data.op === 'LOAD_FILE') {
+    	loadFile(data, event);
+    	return;
+    }
+
+    if (!checkEndPoint(data.endPoint))
+	{
+		console.error("Unexpected endPoint: " + data.endPoint);
+		return;	
+	}
+
+    if(typeof window.fidoClient !== 'object') {
+        window.fidoClient = {};
+    }
+
+	var clientType;
+	// If AppSdk mode is set and is not native, then oob client should be called. 
+	if(data.appSdkMode != null && data.appSdkMode !== 'native') {
+		clientType = 'oob';
+	} else if(data.fidoProtocol == null || data.fidoProtocol === 'uaf' || data.fidoProtocol === 'fido2') {
+		// For uaf and fido2 protocols client should be fido.
+		clientType = 'fido';
+	} else {
+		// For u2f and adaptive protocols, use protocol name as type.
+		clientType = data.fidoProtocol;
+	}
+
+    if(typeof window.fidoClient[clientType] !== 'object') {
+        require(["iframe-" + clientType], function(client) {
+            window.fidoClient[clientType] = client;
+            processMessage(clientType, event);
+        });
+    }
+    else {
+    	processMessage(clientType, event);
+    }
+}
+
+iframeReady();
+
