@@ -1,6 +1,8 @@
 # CHCN GoPhish Resources
 
-This repository contains phishing email templates and landing pages created for use with GoPhish.
+This repository contains phishing email templates and landing pages created for use with [GoPhish](https://getgophish.com/).
 
 * Email Templates
 * [Landing Pages](/landing-pages/index.md)
+
+Maintained by the [Community Health Centres of Northumberland](https://chcnorthumberland.ca/)
