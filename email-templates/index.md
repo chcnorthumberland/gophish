@@ -1,4 +1,4 @@
 # Email Templates
 
-* [ADP](/adp/index.html)
-* [Microsoft](/microsoft/index.html)
+* [Google Sign-in](/google-sign-in/index.html)
+* [Password Expiring](/password-expiring/index.html)
