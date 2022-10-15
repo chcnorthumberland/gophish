@@ -5,4 +5,4 @@ This repository contains phishing email templates and landing pages created for 
 * Email Templates
 * [Landing Pages](/landing-pages/index.md)
 
-Maintained by the [Community Health Centres of Northumberland](https://chcnorthumberland.ca/)
+Repository maintained by [Community Health Centres of Northumberland](https://chcnorthumberland.ca/).
